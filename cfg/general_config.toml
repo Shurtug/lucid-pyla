@@ -1,8 +1,9 @@
-# CPU inference: the YOLO-nano models run ~28-57 IPS on CPU (plenty for the bot) and
-# free the GPU for the emulator. This stops the AMD driver stall crash (myBlobMmioRead /
-# uCountStall) caused by the bot's DirectML + LDPlayer + scrcpy all hammering the GPU.
-# Set back to "auto" for GPU inference if you'd rather have the speed.
-cpu_or_gpu = "cpu"
+# GPU inference via DirectML on the discrete card (device 0): ~2ms/inference
+# vs ~22ms on CPU. Previously reverted to "cpu" because DirectML + LDPlayer +
+# scrcpy hammering the GPU together triggered an AMD driver stall crash
+# (myBlobMmioRead / uCountStall) - that's a driver-level crash, not something
+# code can catch or retry around. If it recurs, set this back to "cpu".
+cpu_or_gpu = "auto"
 gpu_device_id = 0
 max_ips = "auto"
 # Run entity detection for the next frame in a worker thread while the main
