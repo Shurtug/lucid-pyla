@@ -1,0 +1,25 @@
+# Pinned to match the original working PylaAI build (Python 3.11).
+# Loose ~= ranges let newer native libs in (torch 2.12 / numpy 2.5 / opencv 4.13),
+# which caused a native "myBlobMmioRead" crash. These are the versions the shipped
+# pyla_main.exe bundled and ran without issues.
+aiohttp~=3.13
+numpy==2.3.0
+# headless only: easyocr also depends on opencv-python-headless, and having both
+# opencv-python + opencv-python-headless installed causes a cv2 circular-import crash.
+# The bot uses no cv2 GUI windows (it has its own web debug view), so headless is correct.
+opencv-python-headless==4.11.0.86
+onnxruntime-directml==1.24.3
+requests~=2.32
+toml~=0.10
+torch==2.8.0
+torchvision==0.23.0
+pillow>=11.2.1
+discord.py~=2.7
+packaging>=25.0
+pywin32>=311
+easyocr~=1.7
+adbutils==2.12.0
+av==12.3.0
+Flask==3.1.0
+pycryptodome~=3.21
+pandas~=3.0

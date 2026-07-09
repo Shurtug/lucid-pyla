@@ -1,0 +1,396 @@
+{"name": "Apex", "description": "Decisive combat with predictive aim, teammate follow, gas avoidance, and per-brawler gadget modes. Set PROFILE below.", "brawlers": ["all"], "gamemodes": ["all"], "author": "Custom", "date": "2026-07-06"}
+# Decisive movement (kite/approach/hold by range) + PREDICTIVE aim (lead moving targets).
+# Movement stays simple to avoid jitter; only aiming uses the velocity prediction.
+
+PROFILE = "balanced"   # "balanced" | "aggressive" | "survivor"
+#   hold_frac: ideal fighting distance as a fraction of attack_range (higher = stay farther).
+#   kite_mult: back off only when the enemy is closer than safe_range * kite_mult.
+#   chase_frac: only chase an out-of-range enemy up to attack_range * chase_frac.
+PROFILES = {
+    "balanced":   {"kite_mult": 1.00, "hold_frac": 0.85, "chase_frac": 1.20, "use_bush": False, "def_hp": 0.40},
+    "aggressive": {"kite_mult": 0.65, "hold_frac": 0.75, "chase_frac": 1.60, "use_bush": False, "def_hp": 0.20},
+    "survivor":   {"kite_mult": 1.25, "hold_frac": 0.90, "chase_frac": 1.00, "use_bush": True,  "def_hp": 0.60},
+}
+CFG = PROFILES.get(PROFILE, PROFILES["balanced"])
+
+# Gadget usage per brawler (bot can't detect which gadget you equipped):
+#   "offensive" = fire while attacking in range | "defensive" = fire when rushed (escape) | "off"
+GADGET_MODE = {
+    "brock": "defensive",
+}
+DEFAULT_GADGET_MODE = "offensive"
+
+
+LOG = True    # decision logging (throttled)
+
+_name = brawler or current_brawler
+brawler_info = brawlers_info.get(_name)
+if not brawler_info:
+    raise ValueError(f"Brawler '{_name}' not found in brawlers_info.")
+persistent_data.setdefault("time_since_holding_attack", None)
+persistent_data.setdefault("last_gadget", 0.0)
+persistent_data.setdefault("last_mate", None)
+persistent_data.setdefault("last_mate_t", 0.0)
+
+must_hold = must_brawler_hold_attack(_name, brawlers_info)
+gmode = GADGET_MODE.get(_name, DEFAULT_GADGET_MODE)
+safe_range, attack_range, super_range = get_brawler_range(_name)
+player_pos = get_entity_pos(player_data)
+movement = (0, 0)
+_zone = "none"
+_acts = []
+
+
+def blocked(m):
+    return is_path_blocked(player_data, m, walls)
+
+def first_open(cands, fallback):
+    for c in cands:
+        if not blocked(c):
+            return c
+    return fallback
+
+def toward(px, py):
+    dx = px - player_pos[0]
+    dy = py - player_pos[1]
+    return first_open([(dx, dy), (dx, 0), (0, dy)], (dx, dy))
+
+def away(px, py):
+    dx = player_pos[0] - px
+    dy = player_pos[1] - py
+    return first_open([(dx, dy), (dx, 0), (0, dy)], (dx, dy))
+
+def away_from_enemies(enemies_data, radius, fallback_x, fallback_y):
+    dx, dy = 0.0, 0.0
+    for e in enemies_data:
+        cx, cy = get_entity_pos(e)
+        d = get_distance(player_pos, (cx, cy))
+        if 0 < d < radius:
+            dx += (player_pos[0] - cx) / d
+            dy += (player_pos[1] - cy) / d
+    if dx == 0 and dy == 0:
+        return away(fallback_x, fallback_y)
+    mag = (dx**2 + dy**2)**0.5
+    dx = (dx / mag) * 100
+    dy = (dy / mag) * 100
+    return first_open([(dx, dy), (dx, 0), (0, dy)], (dx, dy))
+
+def get_cover_vector(enemies_data, is_thrower, is_defensive, attack_range):
+    best_dir = None
+    best_score = -float('inf')
+    
+    for dx, dy in [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]:
+        px = player_pos[0] + dx * 150
+        py = player_pos[1] + dy * 150
+        if is_path_blocked(player_data, (dx*150, dy*150), walls):
+            continue
+        
+        in_bush = any(b[0] <= px <= b[2] and b[1] <= py <= b[3] for b in bushes)
+        
+        # Calculate distance to nearest enemy from this proposed cover spot
+        min_dist_to_enemy = float('inf')
+        covered_from_closest = False
+        
+        for i, e in enumerate(enemies_data):
+            ex, ey = get_entity_pos(e)
+            dist = get_distance((ex, ey), (px, py))
+            if dist < min_dist_to_enemy:
+                min_dist_to_enemy = dist
+            
+            # We mostly care about being covered from the absolute closest threat
+            if i == 0:
+                covered_from_closest = walls_block_line_of_sight((ex, ey), (px, py), walls)
+        
+        score = 0
+        if in_bush: score += 800
+        
+        if covered_from_closest: 
+            if is_thrower or is_defensive:
+                score += 1500
+            else:
+                score -= 1000
+                
+        if is_defensive:
+            # Heavily prioritize running away when defensive (maximizing distance from nearest threat)
+            score += min_dist_to_enemy * 2
+        elif is_thrower:
+            if min_dist_to_enemy <= attack_range * 0.9: score += 500
+            else: score -= min_dist_to_enemy
+        else:
+            score += min_dist_to_enemy
+            
+        if score > best_score:
+            best_score = score
+            best_dir = (dx * 100, dy * 100)
+    return first_open([(best_dir[0], best_dir[1]), (best_dir[0], 0), (0, best_dir[1])], best_dir) if best_dir else None
+
+def wander():
+    # Follow the nearest teammate. Detection flickers frame-to-frame, so remember the
+    # last-seen teammate for 1.5s and keep following it (fixes "wanders off for no reason").
+    mate, d = find_closest_teammate(teammate_data, player_pos, walls)
+    if mate is not None:
+        persistent_data["last_mate"] = mate
+        persistent_data["last_mate_t"] = time.time()
+        persistent_data["last_seen_mate_pos"] = mate
+        persistent_data["last_seen_mate_t"] = time.time()
+    elif time.time() - persistent_data.get("last_mate_t", 0.0) < 1.5:
+        mate = persistent_data.get("last_mate")
+        d = get_distance(mate, player_pos) if mate else None
+
+    if mate is not None:
+        if d is not None and d <= TILE_SIZE * 1.5:
+            return (0, 0), "escort"
+        return toward(mate[0], mate[1]), "follow"
+
+    # If we saw an enemy recently (last 10 seconds), head towards their last known position
+    last_enemy = persistent_data.get("last_vanished_enemy")
+    if last_enemy and time.time() - last_enemy["t"] < 10.0:
+        enemy_pos = last_enemy["pos"]
+        if get_distance(player_pos, enemy_pos) > TILE_SIZE * 1.5:
+            return toward(enemy_pos[0], enemy_pos[1]), "hunt"
+
+    # If we saw a teammate recently (last 10 seconds), head towards their last known position
+    last_seen_mate_pos = persistent_data.get("last_seen_mate_pos")
+    last_seen_mate_t = persistent_data.get("last_seen_mate_t", 0.0)
+    if last_seen_mate_pos and time.time() - last_seen_mate_t < 10.0:
+        if get_distance(player_pos, last_seen_mate_pos) > TILE_SIZE * 1.5:
+            return toward(last_seen_mate_pos[0], last_seen_mate_pos[1]), "regroup"
+
+    # no teammate/enemy seen recently: survivor hides, otherwise explore
+    if CFG["use_bush"] and bushes:
+        b = min((get_entity_pos(x) for x in bushes), key=lambda c: get_distance(c, player_pos))
+        if get_distance(b, player_pos) > TILE_SIZE:
+            return toward(b[0], b[1]), "bush"
+
+    # Persistent explore direction
+    explore_dir = persistent_data.get("explore_dir")
+    cardinals = {
+        "up": (0, -JOYSTICK_RADIUS),
+        "down": (0, JOYSTICK_RADIUS),
+        "left": (-JOYSTICK_RADIUS, 0),
+        "right": (JOYSTICK_RADIUS, 0)
+    }
+    
+    if explore_dir not in cardinals:
+        explore_dir = "up"
+        persistent_data["explore_dir"] = explore_dir
+        
+    current_vec = cardinals[explore_dir]
+    
+    # If our current direction is blocked, pick a new open direction
+    if is_path_blocked(player_data, (current_vec[0] * 1.5, current_vec[1] * 1.5), walls):
+        open_dirs = []
+        for name, vec in cardinals.items():
+            if not is_path_blocked(player_data, (vec[0] * 1.5, vec[1] * 1.5), walls):
+                open_dirs.append(name)
+        if open_dirs:
+            # Prefer not doing a 180-degree turnaround
+            opposites = {"up": "down", "down": "up", "left": "right", "right": "left"}
+            preferred_dirs = [d for d in open_dirs if d != opposites.get(explore_dir)]
+            if preferred_dirs:
+                explore_dir = preferred_dirs[0]
+            else:
+                explore_dir = open_dirs[0]
+            persistent_data["explore_dir"] = explore_dir
+            current_vec = cardinals[explore_dir]
+        else:
+            current_vec = (0, 0)
+            
+    return current_vec, f"explore_{explore_dir}"
+
+def gas_flee(g):
+    x, y = 0, 0
+    if g["up"] or g["down"]:
+        y = JOYSTICK_RADIUS if g["up"] > g["down"] else -JOYSTICK_RADIUS
+    if g["left"] or g["right"]:
+        x = JOYSTICK_RADIUS if g["left"] > g["right"] else -JOYSTICK_RADIUS
+    if x == 0 and y == 0:
+        return None
+    return first_open([(x, y), (x, 0), (0, y)], (x, y))
+
+
+# release a held (charge) attack once it has been held long enough
+if must_hold and persistent_data["time_since_holding_attack"] is not None:
+    limit = brawler_info['hold_attack'] + seconds_to_hold_attack_after_reaching_max
+    if time.time() - persistent_data["time_since_holding_attack"] >= limit:
+        attack(touch_up=True, touch_down=False)
+        persistent_data["time_since_holding_attack"] = None
+
+# Gas: the engine default threshold (7000) was too high — real gas reads ~4000-6000/side
+# and never triggered. 1200 + a wider area (2.5) catches it reliably. (Confirmed live.)
+gas_raw = is_there_poison_gas(player_data, 1200, 2.5)
+gas = gas_flee(gas_raw)
+
+enemy_coords, enemy_dist = (None, None)
+if is_there_enemy(enemy_data):
+    enemy_coords, enemy_dist = find_closest_enemy(enemy_data, player_pos, walls, "attack")
+    if enemy_coords is not None:
+        persistent_data["last_vanished_enemy"] = {"pos": enemy_coords, "t": time.time()}
+
+led = None
+if enemy_coords is None:
+    if gas:
+        movement, _zone = gas, "gas"
+    else:
+        movement, _zone = wander()
+    
+    last_enemy = persistent_data.get("last_vanished_enemy")
+    if last_enemy and time.time() - last_enemy["t"] < 2.5:
+        blind_pos = last_enemy["pos"]
+        blind_dist = get_distance(player_pos, blind_pos)
+        is_thrower = can_attack_through_walls("attack")
+        if blind_dist <= attack_range and is_enemy_hittable(player_pos, blind_pos, walls, "attack"):
+            if persistent_data.get("time_since_holding_attack") is None:
+                if is_thrower:
+                    attack(aim=blind_pos, distance_ratio=min(1.0, max(0.1, blind_dist / attack_range)))
+                else:
+                    attack(aim=blind_pos)
+                _acts.append("atk-blind")
+else:
+    ex, ey = enemy_coords
+    led = predict_enemy(player_pos, enemy_coords)   # predictive aim point
+    predicted_dist = get_distance(player_pos, led) if led else enemy_dist
+    
+    hp_pct = persistent_data.get("current_hp_pct", 1.0)
+    ammo_pct = persistent_data.get("current_ammo_pct", 1.0)
+    
+    is_out_of_ammo = ammo_pct < 0.33
+    is_defensive = hp_pct < CFG.get("def_hp", 0.40) or is_out_of_ammo
+    is_thrower = can_attack_through_walls("attack")
+    is_ranged = attack_range > 450
+    
+    if is_ranged:
+        panic = attack_range * 0.85
+    else:
+        panic = safe_range * CFG["kite_mult"]
+        if attack_range > 500:
+            panic = max(panic, attack_range * 0.8)
+    if is_defensive:
+        panic = max(panic, attack_range * 1.0)
+        
+    if is_ranged:
+        ideal = attack_range * 0.90
+    else:
+        ideal = attack_range * CFG["hold_frac"]
+        
+    chase = attack_range * CFG["chase_frac"]
+    if gas:
+        movement, _zone = gas, "gas"
+    elif enemy_data and (is_defensive or predicted_dist < panic):
+        reason = ""
+        if is_defensive:
+            if hp_pct < CFG.get("def_hp", 0.40):
+                reason = f"[HP:{hp_pct:.2f}]"
+            elif is_out_of_ammo:
+                reason = f"[AMMO:{ammo_pct:.2f}]"
+        else:
+            reason = f"[DIST:{predicted_dist:.0f}<{panic:.0f}]"
+            
+        if gmode == "defensive" and is_gadget_ready and time.time() - persistent_data["last_gadget"] > 3.0 and predicted_dist < max(350, panic * 0.5):
+            movement = away_from_enemies(enemy_data, panic * 1.5, ex, ey)
+            _zone = f"kite-gadget{reason}"
+            use_gadget()
+            persistent_data["last_gadget"] = time.time()
+            _acts.append("gadget-def")
+        else:
+            cover_vec = get_cover_vector(enemy_data, is_thrower, is_defensive, attack_range)
+            if cover_vec:
+                movement, _zone = cover_vec, f"seek_cover{reason}"
+            else:
+                movement, _zone = away_from_enemies(enemy_data, panic * 1.5, ex, ey), f"kite{reason}"
+    elif enemy_data and not is_thrower and walls_block_line_of_sight(player_pos, enemy_coords, walls):
+        # Healthy/loaded, but enemy is behind cover. Peek to find line of sight.
+        cover_vec = get_cover_vector(enemy_data, is_thrower, is_defensive, attack_range)
+        if cover_vec:
+            movement, _zone = cover_vec, "peek"
+        else:
+            movement, _zone = toward(ex, ey), "approach"
+    elif predicted_dist > chase:
+        movement, _ = wander()
+        _zone = "disengage"
+    elif predicted_dist > ideal:
+        movement, _zone = toward(ex, ey), "approach"
+    else:
+        movement, _zone = (0, 0), "hold"
+
+    # SUPER (predictive: aim where the enemy will be)
+    if is_super_ready and persistent_data["time_since_holding_attack"] is None:
+        st = brawler_info['super_type']
+        led_dist = get_distance(led, player_pos)
+        if _name == "piper":
+            if enemy_dist < panic:
+                away_vec = away(ex, ey)
+                esc_target = (player_pos[0] + away_vec[0], player_pos[1] + away_vec[1])
+                use_super(aim=esc_target)
+                _acts.append("super-def")
+        else:
+            if is_enemy_hittable(player_pos, led, walls, "super") and (
+                    led_dist <= super_range
+                    or st in ["spawnable", "other"]
+                    or (_name in ["stu", "surge"] and st == "charge" and led_dist <= super_range + attack_range)):
+                if is_hypercharge_ready:
+                    use_hypercharge()
+                    _acts.append("hyper")
+                if can_attack_through_walls("super"):
+                    use_super(aim=led, distance_ratio=min(1.0, max(0.1, led_dist / super_range)))
+                else:
+                    use_super(aim=led)
+                _acts.append("super")
+
+    # ATTACK: auto-aim at close range, or search along prediction vector for the best hittable point
+    is_close_range = enemy_dist is not None and enemy_dist < TILE_SIZE * 2.0
+    use_autoaim = False
+    aim_target = None
+    aim_dist = None
+    aim_t = None
+    
+    if is_close_range:
+        use_autoaim = True
+    elif led:
+        for t in [1.0, 0.75, 0.5, 0.25, 0.0]:
+            pt = (enemy_coords[0] + t * (led[0] - enemy_coords[0]), enemy_coords[1] + t * (led[1] - enemy_coords[1]))
+            pt_dist = get_distance(player_pos, pt)
+            if pt_dist <= attack_range and is_enemy_hittable(player_pos, pt, walls, "attack"):
+                aim_target = pt
+                aim_dist = pt_dist
+                aim_t = t
+                break
+                
+    if use_autoaim or aim_target is not None:
+        if gmode == "offensive" and is_gadget_ready and persistent_data["time_since_holding_attack"] is None:
+            use_gadget()
+            _acts.append("gadget")
+        if not must_hold:
+            if use_autoaim:
+                attack()  # Trigger autoaim
+                _acts.append("atk-auto")
+            else:
+                if is_thrower:
+                    attack(aim=aim_target, distance_ratio=min(1.0, max(0.1, aim_dist / attack_range)))
+                else:
+                    attack(aim=aim_target)
+                _acts.append(f"atk-vec({aim_t})")
+        elif persistent_data["time_since_holding_attack"] is None:
+            persistent_data["time_since_holding_attack"] = time.time()
+            attack(touch_up=False, touch_down=True)
+            _acts.append("hold+")
+        elif time.time() - persistent_data["time_since_holding_attack"] >= brawler_info['hold_attack']:
+            attack(touch_up=True, touch_down=False)
+            persistent_data["time_since_holding_attack"] = None
+            _acts.append("hold-")
+
+
+# final safety (the engine also applies its own unstuck rotation on top of this)
+if movement is None:
+    movement = (0, 0)
+if is_path_blocked(player_data, movement, walls):
+    movement = first_open([(0, -JOYSTICK_RADIUS), (JOYSTICK_RADIUS, 0), (-JOYSTICK_RADIUS, 0), (0, JOYSTICK_RADIUS)], movement)
+    _zone += "+wall"
+
+# Only build the (fairly expensive) log string when it will actually be printed.
+if LOG and time.time() - persistent_data.get("_last_log", 0.0) >= 0.4:
+    persistent_data["_last_log"] = time.time()
+    _d = round(enemy_dist) if enemy_dist is not None else "-"
+    print(f"[apex] {_name} s/a/su={safe_range}/{attack_range}/{super_range} enemies={len(enemy_data)} "
+          f"dist={_d} zone={_zone} mv=({round(movement[0])},{round(movement[1])}) acts={_acts or '-'} "
+          f"gas={gas_raw} rdy[g/s/h]={int(is_gadget_ready)}/{int(is_super_ready)}/{int(is_hypercharge_ready)}")

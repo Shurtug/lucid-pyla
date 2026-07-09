@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# AI models / packaged binaries (too large for git)
+models/
+internals/
+
+# Agent tooling
+.claude-flow/
+.swarm/
+.claude/
+
+# Runtime output / debug artifacts
+debug_frames/
+*.log
+latest_brawler_data.json
+cfg/match_history.csv
+cfg/.webui_last_open
+Screenshot_*.png
+*_ammo_mask.png
+*_ammo_roi.png
+test_*.png
+
+# Local scratch / backups
+play - Kopie.py
+scratch_color.py
+*.bak
