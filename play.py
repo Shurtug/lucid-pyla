@@ -104,8 +104,7 @@ class Play:
         self.context = None
         self.frame = None
         self.aim_leading = config_bool(load_toml_as_dict("cfg/bot_config.toml").get("aim_leading"), True)
-        self._enemy_prev_centers = []      # list of (x,y) from previous tick
-        self._enemy_prev_time = None
+        self._enemy_tracks = []            # short-lived tracks: {'pos','vel','t'}
         self._enemy_velocities = []        # aligned to current enemy_data order, (vx,vy) px/s
         self._enemy_curr_centers = []      # aligned to current enemy_data order
         self._player_screen_center = None
@@ -407,7 +406,7 @@ class Play:
         
         vx, vy = 0.0, 0.0
         if prev and dt and 0 < dt <= 0.5:
-            dx_sum, dy_sum, count = 0.0, 0.0, 0
+            dxs, dys = [], []
             used = [False] * len(prev)
             for c in centers:
                 best_i, best_d = -1, float('inf')
@@ -419,12 +418,12 @@ class Play:
                 if best_i >= 0 and best_d <= 150:
                     used[best_i] = True
                     p = prev[best_i]
-                    dx_sum += (c[0] - p[0])
-                    dy_sum += (c[1] - p[1])
-                    count += 1
-            if count > 0:
-                vx = (dx_sum / count) / dt
-                vy = (dy_sum / count) / dt
+                    dxs.append(c[0] - p[0])
+                    dys.append(c[1] - p[1])
+            if dxs:
+                # median instead of mean: robust to a few mis-associated tiles
+                vx = float(np.median(dxs)) / dt
+                vy = float(np.median(dys)) / dt
         
         self._static_prev_centers = centers
         self._static_prev_time = now
@@ -440,76 +439,134 @@ class Play:
             self._camera_velocity = (vx, vy)
 
     def update_enemy_tracks(self, enemy_data, now):
-        """Estimate per-enemy world velocity (px/s) by nearest-neighbour association.
-        Accounts for camera movement and uses EMA smoothing. Populates self._enemy_velocities."""
+        """Estimate per-enemy world velocity (px/s) using short-lived tracks.
+        Association is globally greedy (closest pairs first) against each track's
+        coasted position, so tracks survive brief detection dropouts (bushes,
+        occlusion) instead of resetting to zero velocity."""
         centers = [self.get_entity_pos(e) for e in enemy_data]
-        prev = getattr(self, '_enemy_prev_centers', [])
-        dt = None if getattr(self, '_enemy_prev_time', None) is None else (now - self._enemy_prev_time)
+        scale = self.window_controller.scale_factor if self.window_controller and self.window_controller.scale_factor else 1.0
+        tile = self.TILE_SIZE * scale
+        cam_vx, cam_vy = getattr(self, '_camera_velocity', (0.0, 0.0))
+        tracks = [t for t in getattr(self, '_enemy_tracks', []) if now - t['t'] <= 0.6]
+
+        # Match detections to tracks globally: sort all candidate pairs by
+        # distance and take the closest first. The old per-detection greedy
+        # loop could steal another enemy's track when two were close together.
+        gate = 6.0 * tile
+        pairs = []
+        for ci, c in enumerate(centers):
+            for ti, tr in enumerate(tracks):
+                dt = now - tr['t']
+                coast = (tr['pos'][0] + (tr['vel'][0] + cam_vx) * dt,
+                         tr['pos'][1] + (tr['vel'][1] + cam_vy) * dt)
+                d = self.get_distance(c, coast)
+                if d <= gate:
+                    pairs.append((d, ci, ti))
+        pairs.sort(key=lambda p: p[0])
+        match = {}
+        used = set()
+        for d, ci, ti in pairs:
+            if ci in match or ti in used:
+                continue
+            match[ci] = ti
+            used.add(ti)
+
+        vmax = 5.0 * tile   # fastest plausible sustained movement on screen
+        spike = 9.0 * tile  # faster than any dash -> ID swap, not motion
+        var0 = (2.0 * tile) ** 2  # starting velocity variance for new tracks
         velocities = []
-        if not prev or dt is None or dt <= 0 or dt > 0.5:
-            velocities = [(0.0, 0.0) for _ in centers]
-        else:
-            cam_vx, cam_vy = getattr(self, '_camera_velocity', (0.0, 0.0))
-            used = [False] * len(prev)
-            for c in centers:
-                best_i, best_d = -1, float('inf')
-                for i, p in enumerate(prev):
-                    if used[i]:
-                        continue
-                    d = self.get_distance(c, p)
-                    if d < best_d:
-                        best_d, best_i = d, i
-                # association gate: an enemy won't jump more than ~300 px in one tick
-                if best_i >= 0 and best_d <= 300:
-                    used[best_i] = True
-                    p = prev[best_i]
-                    raw_vx = (c[0] - p[0]) / dt
-                    raw_vy = (c[1] - p[1]) / dt
-                    
-                    # Convert to world velocity by subtracting camera screen velocity
-                    world_vx = raw_vx - cam_vx
-                    world_vy = raw_vy - cam_vy
-                    
-                    # Sanity check: if an enemy "jumps" across the screen due to a tracking ID swap 
-                    # (e.g. one goes into a bush and another exits nearby), it creates an impossible velocity spike.
-                    if abs(world_vx) > 2500 or abs(world_vy) > 2500:
-                        world_vx, world_vy = 0.0, 0.0
-                    
-                    # Apply EMA smoothing for enemy velocity
-                    if hasattr(self, '_enemy_prev_velocities') and best_i < len(self._enemy_prev_velocities):
-                        prev_vx, prev_vy = self._enemy_prev_velocities[best_i]
-                        alpha = 0.3
-                        vx = prev_vx * (1 - alpha) + world_vx * alpha
-                        vy = prev_vy * (1 - alpha) + world_vy * alpha
+        confidences = []
+        new_tracks = []
+        for ci, c in enumerate(centers):
+            vx, vy = 0.0, 0.0
+            hits, var = 0, var0
+            ti = match.get(ci)
+            if ti is not None:
+                tr = tracks[ti]
+                dt = now - tr['t']
+                hits, var = tr['hits'], tr['var']
+                if dt > 0:
+                    # world velocity = screen velocity minus camera velocity
+                    raw_vx = (c[0] - tr['pos'][0]) / dt - cam_vx
+                    raw_vy = (c[1] - tr['pos'][1]) / dt - cam_vy
+                    if math.hypot(raw_vx, raw_vy) > spike:
+                        # likely an ID swap: keep a damped velocity, distrust it
+                        vx, vy = tr['vel'][0] * 0.5, tr['vel'][1] * 0.5
+                        hits, var = 1, var0
                     else:
-                        vx, vy = world_vx, world_vy
-                    velocities.append((vx, vy))
+                        alpha = 0.35
+                        vx = tr['vel'][0] * (1 - alpha) + raw_vx * alpha
+                        vy = tr['vel'][1] * (1 - alpha) + raw_vy * alpha
+                        hits += 1
+                        # residual between raw and smoothed velocity measures how
+                        # noisy/unpredictable this track currently is
+                        res = math.hypot(raw_vx - vx, raw_vy - vy)
+                        var = var * 0.7 + (res * res) * 0.3
+                    speed = math.hypot(vx, vy)
+                    if speed > vmax:
+                        vx, vy = vx * vmax / speed, vy * vmax / speed
                 else:
-                    velocities.append((0.0, 0.0))
+                    vx, vy = tr['vel']
+            velocities.append((vx, vy))
+            confidences.append(self._track_confidence(hits, var, tile))
+            new_tracks.append({'pos': c, 'vel': (vx, vy), 't': now, 'hits': hits, 'var': var})
+
+        # Keep unmatched tracks alive briefly so a flickering detection resumes
+        # its old velocity instead of restarting from zero.
+        for ti, tr in enumerate(tracks):
+            if ti not in used:
+                new_tracks.append(tr)
+
+        self._enemy_tracks = new_tracks
         self._enemy_curr_centers = centers
         self._enemy_velocities = velocities
-        self._enemy_prev_velocities = velocities
-        self._enemy_prev_centers = centers
-        self._enemy_prev_time = now
+        self._enemy_confidences = confidences
         return velocities
 
-    def get_enemy_velocity(self, pos):
-        """Velocity (vx,vy) of the tracked enemy nearest to pos; (0,0) if none."""
+    @staticmethod
+    def _track_confidence(hits, var, tile):
+        """0..1 trust in a track's velocity: needs a few consecutive matched
+        updates to ramp up, and degrades when the velocity residual is noisy."""
+        conf_hits = min(1.0, hits / 3.0)
+        # var holds per-frame residual noise; the EMA (alpha=0.35) suppresses it
+        # by alpha/(2-alpha) in the smoothed estimate, so judge that instead -
+        # plain detection jitter shouldn't tank confidence, erratic dodging should
+        est_var = var * 0.21
+        sigma_ref = (2.0 * tile) ** 2
+        conf_noise = sigma_ref / (sigma_ref + est_var)
+        return conf_hits * conf_noise
+
+    def get_enemy_track(self, pos):
+        """((vx,vy), confidence) of the tracked enemy nearest to pos."""
         if not self._enemy_curr_centers:
-            return (0.0, 0.0)
+            return (0.0, 0.0), 0.0
         best_i, best_d = -1, float('inf')
         for i, c in enumerate(self._enemy_curr_centers):
             d = self.get_distance(c, pos)
             if d < best_d:
                 best_d, best_i = d, i
         if best_i < 0:
-            return (0.0, 0.0)
-        return self._enemy_velocities[best_i]
+            return (0.0, 0.0), 0.0
+        confs = getattr(self, '_enemy_confidences', [])
+        conf = confs[best_i] if best_i < len(confs) else 0.0
+        return self._enemy_velocities[best_i], conf
+
+    def get_enemy_velocity(self, pos):
+        """Velocity (vx,vy) of the tracked enemy nearest to pos; (0,0) if none."""
+        return self.get_enemy_track(pos)[0]
 
     def predict_enemy(self, player_pos, enemy_pos, fixed_lead=None):
-        """Predicted position of the enemy nearest to enemy_pos."""
-        vx, vy = self.get_enemy_velocity(enemy_pos)
-        
+        """Predicted position of the enemy nearest to enemy_pos.
+
+        The lead is confidence-scaled (an unreliable velocity estimate pulls the
+        aim back toward the enemy's current position), deadbanded (near-zero
+        leads are detection noise), and clamped so it never crosses a wall the
+        enemy can't actually run through."""
+        (vx, vy), conf = self.get_enemy_track(enemy_pos)
+        scale_factor = self.window_controller.scale_factor if self.window_controller and self.window_controller.scale_factor else 1.0
+        tile = self.TILE_SIZE * scale_factor
+        vx, vy = vx * conf, vy * conf
+
         if fixed_lead is not None:
             lead_seconds = fixed_lead
         else:
@@ -517,16 +574,43 @@ class Play:
             if self.current_brawler and self.brawlers_info:
                 info = self.brawlers_info.get(self.current_brawler, {})
                 speed = info.get('projectile_speed', 0)
-            
+
             if speed > 0:
-                scale_factor = self.window_controller.scale_factor if self.window_controller and self.window_controller.scale_factor else 1.0
                 speed_on_screen = speed * (64.0 / 300.0) * scale_factor
-                dist = self.get_distance(player_pos, enemy_pos)
-                lead_seconds = dist / speed_on_screen
+                lead_seconds = self.get_distance(player_pos, enemy_pos) / speed_on_screen
+                # The projectile has to reach where the enemy WILL be, not where
+                # it is now, so iterate the time-of-flight toward the fixed point.
+                for _ in range(2):
+                    tgt = (enemy_pos[0] + vx * lead_seconds, enemy_pos[1] + vy * lead_seconds)
+                    lead_seconds = self.get_distance(player_pos, tgt) / speed_on_screen
+                lead_seconds = min(lead_seconds, 1.0)
             else:
                 lead_seconds = 0
-                
-        return (enemy_pos[0] + vx * lead_seconds, enemy_pos[1] + vy * lead_seconds)
+
+        # leads below a third of a tile are indistinguishable from detection
+        # jitter - aim straight at the enemy instead of wobbling around it
+        if math.hypot(vx, vy) * lead_seconds < 0.35 * tile:
+            return (enemy_pos[0], enemy_pos[1])
+
+        led = (enemy_pos[0] + vx * lead_seconds, enemy_pos[1] + vy * lead_seconds)
+
+        # The enemy can't run through walls: clamp the lead to the longest
+        # unblocked fraction of its projected path.
+        walls = getattr(self, 'last_walls_data', None)
+        if walls and self.walls_block_line_of_sight(enemy_pos, led, walls):
+            lo, hi = 0.0, 1.0
+            for _ in range(4):
+                mid = (lo + hi) / 2
+                pt = (enemy_pos[0] + (led[0] - enemy_pos[0]) * mid,
+                      enemy_pos[1] + (led[1] - enemy_pos[1]) * mid)
+                if self.walls_block_line_of_sight(enemy_pos, pt, walls):
+                    hi = mid
+                else:
+                    lo = mid
+            led = (enemy_pos[0] + (led[0] - enemy_pos[0]) * lo,
+                   enemy_pos[1] + (led[1] - enemy_pos[1]) * lo)
+
+        return led
 
     def find_closest_teammate(self, teammate_data, player_coords, walls):
         closest_distance = float('inf')
@@ -757,6 +841,7 @@ class Play:
                 'enemy_velocities': self._enemy_velocities,
                 'predict_enemy': self.predict_enemy,
                 'get_enemy_velocity': self.get_enemy_velocity,
+                'get_enemy_track': self.get_enemy_track,
                 'walls_block_line_of_sight': self.walls_block_line_of_sight,
                 'can_attack_through_walls': lambda st: self.can_attack_through_walls(self.current_brawler, st, self.brawlers_info)
             }
@@ -779,87 +864,197 @@ class Play:
         return movement
 
     def update_player_hp(self, frame, player_data):
+        """Track player HP and ammo from the bars above the player.
+
+        A confident sighting of the HP bar caches its geometry (offset from the
+        player center + width). Measurement then scans column fill inside that
+        fixed rect, which keeps working at low HP (tiny green remnant that no
+        contour filter accepts) and lets ammo be read even on frames where the
+        HP contour itself is noisy or occluded.
+        """
         if not player_data:
             return
-        
+
         if not hasattr(self, 'persistent_data'):
             self.persistent_data = {}
-            
+        pd = self.persistent_data
+        now = time.time()
+
         player_box = player_data[0]
         x_center, y_center = self.get_entity_pos(player_box)
         scale_factor = self.window_controller.scale_factor if self.window_controller and self.window_controller.scale_factor else 1.0
-        
+
         y_min = int(max(0, y_center - 150 * scale_factor))
         y_max = int(min(frame.shape[0], y_center))
-        x_min = int(max(0, x_center - 150 * scale_factor))
-        x_max = int(min(frame.shape[1], x_center + 150 * scale_factor))
-        
+        # bar is centered above the player; a narrow window keeps teammate bars
+        # and grass out of the mask
+        x_min = int(max(0, x_center - 90 * scale_factor))
+        x_max = int(min(frame.shape[1], x_center + 90 * scale_factor))
+
         roi = frame[y_min:y_max, x_min:x_max]
         if roi.size == 0:
             return
-            
+
         hsv = cv2.cvtColor(roi, cv2.COLOR_RGB2HSV)
-        lower_green = np.array([40, 100, 100])
-        upper_green = np.array([80, 255, 255])
+        lower_green = np.array([40, 100, 120])
+        upper_green = np.array([85, 255, 255])
         mask = cv2.inRange(hsv, lower_green, upper_green)
-        
+
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
+
         target_w = int(100 * scale_factor)
-        best_w = 0
+        max_h = 20 * scale_factor
+        candidates = []
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            aspect_ratio = w / float(h) if h > 0 else 0
-            area = w * h
-            if aspect_ratio > 3 and w > 20 and h > 2 and area > 100:
-                # Ignore contours that are too wide to be a health bar (e.g. grass)
-                if w <= 1.15 * target_w:
-                    if w > best_w:
-                        best_w = w
-                    
-        if best_w > 0:
-            max_w = int(self.persistent_data.get("max_hp_width", target_w))
-            
-            # Reset if poisoned (e.g., from grass before this fix was applied) or invalid
-            if max_w > 1.15 * target_w or max_w < 0.8 * target_w:
-                max_w = target_w
-                self.persistent_data["max_hp_width"] = target_w
-                
-            if best_w > max_w:
-                self.persistent_data["max_hp_width"] = best_w
-                max_w = best_w
-            
-            hp_pct = min(1.0, max(0.0, best_w / float(max_w)))
-            self.persistent_data["current_hp_pct"] = hp_pct
+            if h < 3 or h > max_h or w < 4 or w > 1.15 * target_w:
+                continue
+            candidates.append((w, x, y, h))
 
-            # Extract Ammo
-            best_x, best_y, best_h = 0, 0, 0
-            for cnt in contours:
-                x, y, w, h = cv2.boundingRect(cnt)
-                if w == best_w:
-                    best_x, best_y, best_h = x, y, h
-                    break
-            
-            ammo_roi_y1 = best_y + best_h
-            ammo_roi_y2 = best_y + best_h + 25
-            ammo_roi_x1 = best_x
-            ammo_roi_x2 = best_x + max_w
-            
-            ammo_roi = hsv[ammo_roi_y1:ammo_roi_y2, ammo_roi_x1:ammo_roi_x2]
-            
-            if ammo_roi.size > 0:
-                lower_orange = np.array([5, 150, 150])
-                upper_orange = np.array([25, 255, 255])
+        max_w = int(pd.get("max_hp_width", target_w))
+        if max_w > 1.15 * target_w or max_w < 0.8 * target_w:
+            max_w = target_w
+            pd["max_hp_width"] = target_w
+
+        geom = pd.get("hp_bar_geom")
+        if geom and abs(geom.get("scale", scale_factor) - scale_factor) > 1e-6:
+            geom = None  # window was rescaled, cached geometry is void
+            pd.pop("hp_bar_geom", None)
+
+        # Refresh cached geometry. Discovery needs a clearly bar-shaped contour;
+        # once cached, any candidate near the cached spot re-anchors it against
+        # detection-box jitter (the green fill is left-anchored, so the contour's
+        # left edge is the bar's left edge at any HP).
+        best = None
+        for w, x, y, h in candidates:
+            is_barlike = w >= 0.55 * target_w and w / float(h) > 2.5
+            near_cached = geom is not None and \
+                abs((x_min + x) - (x_center + geom["dx"])) <= 15 * scale_factor and \
+                abs((y_min + y) - (y_center + geom["dy"])) <= 15 * scale_factor
+            if not (is_barlike or near_cached):
+                continue
+            if best is None or w > best[0]:
+                best = (w, x, y, h)
+        if best is not None:
+            w, x, y, h = best
+            if w > max_w:
+                pd["max_hp_width"] = w
+                max_w = w
+            geom = {
+                "dx": (x_min + x) - x_center,
+                "dy": (y_min + y) - y_center,
+                "h": max(h, geom["h"]) if geom else h,
+                "scale": scale_factor,
+            }
+            pd["hp_bar_geom"] = geom
+
+        # --- HP: fraction of filled columns inside the cached bar rect ---
+        hp_pct = None
+        hp_conf = 0.0
+        if geom:
+            bx = int(x_center + geom["dx"] - x_min)
+            by = int(y_center + geom["dy"] - y_min)
+            bh = max(3, int(geom["h"]))
+            b0 = max(0, by - 2)
+            b1 = min(mask.shape[0], by + bh + 2)
+            x0 = max(0, bx)
+            x1 = min(mask.shape[1], bx + max_w)
+            if b1 > b0 and x1 - x0 > max_w * 0.5:
+                band = mask[b0:b1, x0:x1]
+                col_filled = (band > 0).sum(axis=0) >= max(1, int(bh * 0.4))
+                hp_pct = float(col_filled.sum()) / float(max_w)
+                hp_conf = 0.9
+        if hp_pct is None and best is not None:
+            hp_pct = best[0] / float(max_w)
+            hp_conf = 0.6
+
+        if hp_pct is not None:
+            hp_pct = min(1.0, max(0.0, hp_pct))
+            prev_hp = pd.get("current_hp_pct")
+            if prev_hp is not None and now - pd.get("hp_updated_at", 0) < 0.5:
+                hp_pct = prev_hp * 0.4 + hp_pct * 0.6  # smooth single-frame flicker
+            pd["current_hp_pct"] = hp_pct
+            pd["hp_confidence"] = hp_conf
+            pd["hp_updated_at"] = now
+
+        # --- Ammo: orange fill directly below the HP bar ---
+        layout = pd.get("ammo_layout")
+        if layout and layout.get("brawler") != (self.current_brawler or ""):
+            layout = None
+            pd.pop("ammo_layout", None)
+            pd.pop("ammo_seg_candidate", None)
+            pd.pop("ammo_seg_hits", None)
+
+        if geom:
+            bx = int(x_center + geom["dx"] - x_min)
+            ay1 = int(y_center + geom["dy"] + geom["h"] - y_min) + 1
+            ay2 = min(hsv.shape[0], ay1 + max(6, int(20 * scale_factor)))
+            ax0 = max(0, bx)
+            ax1 = min(hsv.shape[1], bx + max_w)
+            unclipped = (ax0 == bx and ax1 == bx + max_w)
+            if ay2 > ay1 and ax1 - ax0 > max_w * 0.5:
+                ammo_roi = hsv[ay1:ay2, ax0:ax1]
+                lower_orange = np.array([4, 120, 120])
+                upper_orange = np.array([32, 255, 255])
                 mask_ammo = cv2.inRange(ammo_roi, lower_orange, upper_orange)
-                
-                ammo_pixels = cv2.countNonZero(mask_ammo)
-                max_ammo = self.persistent_data.get("max_ammo_pixels", 0)
-                if ammo_pixels > max_ammo:
-                    self.persistent_data["max_ammo_pixels"] = ammo_pixels
-                    max_ammo = ammo_pixels
-                
-                ammo_pct = ammo_pixels / float(max_ammo) if max_ammo > 0 else 1.0
-                self.persistent_data["current_ammo_pct"] = ammo_pct
+                ah = mask_ammo.shape[0]
+                col_filled = (mask_ammo > 0).sum(axis=0) >= max(1, int(ah * 0.25))
+                raw_pct = float(col_filled.sum()) / float(max_w)
+
+                # Learn the segment layout from an (essentially) full bar:
+                # runs of filled columns of similar width are the segments.
+                # Requires the same count on 3 sightings before trusting it.
+                if layout is None and unclipped and raw_pct >= 0.88:
+                    runs, start = [], None
+                    for i, f in enumerate(col_filled):
+                        if f and start is None:
+                            start = i
+                        elif not f and start is not None:
+                            runs.append((start, i))
+                            start = None
+                    if start is not None:
+                        runs.append((start, col_filled.size))
+                    runs = [r for r in runs if r[1] - r[0] >= 0.08 * max_w]
+                    if 2 <= len(runs) <= 6:
+                        widths = [r[1] - r[0] for r in runs]
+                        if max(widths) <= 2.2 * min(widths):
+                            cand = len(runs)
+                            if pd.get("ammo_seg_candidate") == cand:
+                                pd["ammo_seg_hits"] = pd.get("ammo_seg_hits", 0) + 1
+                            else:
+                                pd["ammo_seg_candidate"] = cand
+                                pd["ammo_seg_hits"] = 1
+                            if pd["ammo_seg_hits"] >= 3:
+                                layout = {
+                                    "brawler": self.current_brawler or "",
+                                    "segments": cand,
+                                    "bounds": [(s / float(max_w), e / float(max_w)) for s, e in runs],
+                                }
+                                pd["ammo_layout"] = layout
+
+                if layout and unclipped:
+                    # per-segment fill -> exact segment count and a normalized
+                    # pct where a truly full bar reads 1.0 (separators excluded)
+                    fills = []
+                    for s, e in layout["bounds"]:
+                        a, b = int(s * max_w), int(e * max_w)
+                        seg = col_filled[a:b]
+                        fills.append(float(seg.mean()) if seg.size else 0.0)
+                    ammo_pct = min(1.0, sum(min(1.0, f / 0.95) for f in fills) / len(fills))
+                    pd["current_ammo_segments"] = sum(1 for f in fills if f >= 0.85)
+                    pd["max_ammo_segments"] = layout["segments"]
+                    ammo_conf = 0.9
+                else:
+                    ammo_pct = min(1.0, raw_pct)
+                    pd["current_ammo_segments"] = None
+                    ammo_conf = 0.6
+
+                prev_ammo = pd.get("current_ammo_pct")
+                if prev_ammo is not None and now - pd.get("ammo_updated_at", 0) < 0.5:
+                    ammo_pct = prev_ammo * 0.4 + ammo_pct * 0.6
+                pd["current_ammo_pct"] = ammo_pct
+                pd["ammo_confidence"] = ammo_conf
+                pd["ammo_updated_at"] = now
 
     def check_if_hypercharge_ready(self, frame):
         wr, hr = self.window_controller.width_ratio, self.window_controller.height_ratio
@@ -992,6 +1187,23 @@ class Play:
                 debug_data["super_range"] = int(super_range)
             except Exception:
                 pass
+            pd = getattr(self, 'persistent_data', {})
+            debug_data["hp_pct"] = pd.get("current_hp_pct")
+            debug_data["ammo_pct"] = pd.get("current_ammo_pct")
+            debug_data["ammo_segments"] = pd.get("current_ammo_segments")
+            debug_data["max_ammo_segments"] = pd.get("max_ammo_segments")
+            if debug_data["player"] and debug_data["enemy"]:
+                try:
+                    ppos = self.get_entity_pos(debug_data["player"][0])
+                    preds = []
+                    for box in debug_data["enemy"]:
+                        epos = self.get_entity_pos(box)
+                        led = self.predict_enemy(ppos, epos)
+                        _, conf = self.get_enemy_track(epos)
+                        preds.append([int(led[0]), int(led[1]), round(conf, 2)])
+                    debug_data["enemy_pred"] = preds
+                except Exception:
+                    pass
             if debug_data["player"]:
                 try:
                     debug_data["poison_gas"] = self.is_there_poison_gas(debug_data["player"][0])

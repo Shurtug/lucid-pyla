@@ -495,6 +495,17 @@ def draw_debug_data(image, debug_data, width, height):
         draw_player_hit_circle(image, debug_data.get("player_hit_circle"))
     draw_boxes(image, debug_data.get("enemy"), (0, 0, 255))
     draw_boxes(image, debug_data.get("teammate"), (255, 0, 0))
+
+    # predicted aim points (cross) with track confidence
+    for pred in debug_data.get("enemy_pred") or []:
+        if len(pred) >= 2:
+            px, py = int(pred[0]), int(pred[1])
+            cv2.drawMarker(image, (px, py), (0, 0, 0), cv2.MARKER_CROSS, 30, 6, cv2.LINE_AA)
+            cv2.drawMarker(image, (px, py), (0, 165, 255), cv2.MARKER_CROSS, 26, 3, cv2.LINE_AA)
+            if len(pred) > 2 and pred[2] is not None:
+                label = f"{pred[2]:.2f}"
+                cv2.putText(image, label, (px + 16, py - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4, cv2.LINE_AA)
+                cv2.putText(image, label, (px + 16, py - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2, cv2.LINE_AA)
     if advanced_visuals:
         draw_lines(image, debug_data.get("enemy_los_lines") or debug_data.get("clear_los_lines"), (0, 0, 120), 7)
         draw_lines(image, debug_data.get("teammate_los_lines"), (255, 180, 0), 7)
@@ -523,6 +534,21 @@ def draw_debug_data(image, debug_data, width, height):
     if state:
         cv2.putText(image, str(state), (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 5, cv2.LINE_AA)
         cv2.putText(image, str(state), (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2, cv2.LINE_AA)
+
+    parts = []
+    hp = debug_data.get("hp_pct")
+    if hp is not None:
+        parts.append(f"HP {hp * 100:.0f}%")
+    ammo = debug_data.get("ammo_pct")
+    if ammo is not None:
+        segs = debug_data.get("ammo_segments")
+        max_segs = debug_data.get("max_ammo_segments")
+        seg_txt = f" [{segs}/{max_segs}]" if segs is not None and max_segs else ""
+        parts.append(f"AMMO {ammo * 100:.0f}%{seg_txt}")
+    if parts:
+        txt = "  ".join(parts)
+        cv2.putText(image, txt, (20, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 5, cv2.LINE_AA)
+        cv2.putText(image, txt, (20, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (80, 255, 120), 2, cv2.LINE_AA)
 
 
 def run_viewer_worker(

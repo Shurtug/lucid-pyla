@@ -253,8 +253,15 @@ else:
     
     hp_pct = persistent_data.get("current_hp_pct", 1.0)
     ammo_pct = persistent_data.get("current_ammo_pct", 1.0)
-    
-    is_out_of_ammo = ammo_pct < 0.33
+    ammo_segs = persistent_data.get("current_ammo_segments")
+    ammo_age = time.time() - persistent_data.get("ammo_updated_at", 0)
+
+    if ammo_age > 2.0:
+        is_out_of_ammo = False          # stale reading - don't retreat on old data
+    elif ammo_segs is not None:
+        is_out_of_ammo = ammo_segs == 0  # exact: no full segment ready
+    else:
+        is_out_of_ammo = ammo_pct < 0.33
     is_defensive = hp_pct < CFG.get("def_hp", 0.40) or is_out_of_ammo
     is_thrower = can_attack_through_walls("attack")
     is_ranged = attack_range > 450
