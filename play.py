@@ -4,6 +4,7 @@ import time
 import cv2
 import numpy as np
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 from detect import Detect
 try:
@@ -112,6 +113,20 @@ class Play:
         self._active_playstyle_code = pyla_code
         self._last_reload_check = 0.0
         self._pending_gadget = False
+        # compile once, not every tick: exec() on a raw string recompiles the
+        # whole playstyle script each frame (~2ms for apex)
+        self._pyla_compiled = None
+        try:
+            self._pyla_compiled = compile(pyla_code, self._active_playstyle_file, "exec")
+        except Exception:
+            pass
+        # inference pipelining: run detection for the next frame in a worker
+        # thread while the main thread does CV/playstyle work on this one.
+        # ONNX releases the GIL during run(), so the overlap is real.
+        self.pipeline_inference = config_bool(
+            load_toml_as_dict("cfg/general_config.toml").get("pipeline_inference"), True)
+        self._detect_executor = ThreadPoolExecutor(max_workers=1) if self.pipeline_inference else None
+        self._pending_detection = None  # (frame, future) awaiting processing
 
     @staticmethod
     def get_entity_pos(entity):
@@ -784,8 +799,9 @@ class Play:
                 return
             if target == self._active_playstyle_file and code == self._active_playstyle_code:
                 return
-            compile(code, target, "exec")  # sanity-check before swapping in
+            compiled = compile(code, target, "exec")  # sanity-check before swapping in
             self.pyla_code = code
+            self._pyla_compiled = compiled
             self._active_playstyle_file = target
             self._active_playstyle_code = code
             print(f"[reload] playstyle -> {target} ({len(code)} chars)")
@@ -1150,7 +1166,7 @@ class Play:
         return walls, bushes
 
     def get_movement(self):
-        movement, updated_globals = interpret_pyla_code(self.pyla_code, self.context)
+        movement, updated_globals = interpret_pyla_code(self._pyla_compiled or self.pyla_code, self.context)
         return movement
 
     def publish_debug_view(self, frame, data, state, movement=None):
@@ -1218,9 +1234,20 @@ class Play:
         self.window_controller.debug_view.publish(frame, debug_data)
 
     def main(self, frame, brawler, main):
+        if self._detect_executor is not None:
+            # Pipelined: kick off detection for THIS frame in the worker, then
+            # process the PREVIOUS frame with its (usually already finished)
+            # detections. One frame of extra latency, ~2x the iteration rate.
+            future = self._detect_executor.submit(self.get_main_data, frame)
+            pending, self._pending_detection = self._pending_detection, (frame, future)
+            if pending is None:
+                return  # first frame just primes the pipeline
+            frame, prev_future = pending
+            data = prev_future.result()
+        else:
+            data = self.get_main_data(frame)
         current_time = time.time()
         state = main.get_latest_state()
-        data = self.get_main_data(frame)
         if current_time - self.time_since_walls_checked > self.walls_treshold:
             tile_data = self.get_tile_data(frame, data.get("player"))
             walls, bushes = self.process_tile_data(tile_data)

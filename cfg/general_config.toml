@@ -5,6 +5,10 @@
 cpu_or_gpu = "cpu"
 gpu_device_id = 0
 max_ips = "auto"
+# Run entity detection for the next frame in a worker thread while the main
+# thread processes the current one (ONNX releases the GIL). ~2x iteration rate
+# on CPU inference for one frame of extra decision latency. Set false to disable.
+pipeline_inference = true
 # scrcpy capture. Lower max_width = lighter/steadier stream on flaky emulators
 # (fixes LDPlayer freezes + native decode crashes). 0 = full native res (1920).
 # Detection uses 640px internally, so 1280 is visually identical for the model.
