@@ -1,9 +1,11 @@
-# GPU inference via DirectML on the discrete card (device 0): ~2ms/inference
-# vs ~22ms on CPU. Previously reverted to "cpu" because DirectML + LDPlayer +
-# scrcpy hammering the GPU together triggered an AMD driver stall crash
-# (myBlobMmioRead / uCountStall) - that's a driver-level crash, not something
-# code can catch or retry around. If it recurs, set this back to "cpu".
-cpu_or_gpu = "auto"
+# CPU inference. GPU (DirectML) was retried on 2026-07-10 and reproducibly
+# segfaults (exit 139, no Python traceback - a native driver crash) within
+# ~20s of the bot loop starting, matching the original myBlobMmioRead /
+# uCountStall AMD driver stall: DirectML + LDPlayer + scrcpy all hammering
+# the same discrete GPU. In isolation (no emulator) DML benchmarks at
+# ~2ms/inference with no crash, so this only manifests under real
+# concurrent GPU load - do not re-enable "auto"/"gpu" without a driver fix.
+cpu_or_gpu = "cpu"
 gpu_device_id = 0
 max_ips = "auto"
 # Run entity detection for the next frame in a worker thread while the main
