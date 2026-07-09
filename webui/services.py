@@ -808,6 +808,9 @@ class WebDataService:
 
         grouped: dict[str, dict[str, Any]] = {}
 
+        if not csv_path.exists():
+            return self._build_match_history_response([])
+
         with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
             for row in csv.DictReader(handle):
                 brawler = str(row.get("brawler_name", "")).strip()
