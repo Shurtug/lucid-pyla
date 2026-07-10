@@ -74,7 +74,8 @@ class LobbyAutomation:
             xt = max(0, int(orig_x - 260 * wr))
             yt = max(0, int(orig_y - 280 * hr))
             trophy_crop = original_screenshot[yt:yt + crop_h, xt:xt + crop_w]
-            gray = cv2.cvtColor(trophy_crop, cv2.COLOR_BGR2GRAY)
+            # frames from scrcpy are RGB24 (see scrcpy/core.py), not BGR
+            gray = cv2.cvtColor(trophy_crop, cv2.COLOR_RGB2GRAY)
             gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
             _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
 
@@ -100,7 +101,7 @@ class LobbyAutomation:
         y1, y2 = max(0, ys - my), min(original_screenshot.shape[0], ys + my)
         shield_crop = original_screenshot[y1:y2, x1:x2]
 
-        hsv = cv2.cvtColor(shield_crop, cv2.COLOR_BGR2HSV)
+        hsv = cv2.cvtColor(shield_crop, cv2.COLOR_RGB2HSV)
         # Purple badge pixels indicate a prestige (1000+) brawler. Pixel-count
         # threshold scales with crop area (wr*hr) same as the crop itself.
         purple_mask = cv2.inRange(hsv, np.array([130, 100, 50]), np.array([150, 255, 255]))
@@ -222,7 +223,7 @@ class LobbyAutomation:
                         xb = max(0, int(orig_x - 60 * wr))
                         yb = max(0, int(orig_y + 10 * hr))
                         bar_crop = original_screenshot[yb:yb+bar_h, xb:xb+bar_w]
-                        hsv_bar = cv2.cvtColor(bar_crop, cv2.COLOR_BGR2HSV)
+                        hsv_bar = cv2.cvtColor(bar_crop, cv2.COLOR_RGB2HSV)
                         # "Not grey" check: Colorful power bars (green, pink, gold) have very high saturation (>110)
                         # Unowned brawlers have no bar, just the dark blue/grey background (saturation < 90)
                         mask = cv2.inRange(hsv_bar, np.array([0, 110, 50]), np.array([179, 255, 255]))
