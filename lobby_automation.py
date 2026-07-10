@@ -53,7 +53,7 @@ class LobbyAutomation:
             time.sleep(min(poll_interval, max(end_time - time.time(), 0)))
         return False
 
-    def _read_trophy_count(self, original_screenshot, orig_x, orig_y, wr=1.0, hr=1.0):
+    def _read_trophy_count(self, original_screenshot, orig_x, orig_y, wr=1.0, hr=1.0, retries=3, retry_delay=0.35):
         """OCR the trophy count + prestige badge near a brawler icon at the
         given (grid-snapped) screen coordinates. Returns total trophies.
 
@@ -62,22 +62,36 @@ class LobbyAutomation:
         - without this, any capture resolution other than 1920x1080 (e.g.
         scrcpy_max_width < 1920) crops the wrong region entirely and the OCR
         silently reads nothing, defaulting trophies to 0.
+
+        The brawler-selection list is still animating in for a moment after
+        it's opened, so the very first screenshot can catch the trophy badge
+        before its digits have rendered. If no digit is found, retry with a
+        fresh screenshot rather than silently trusting a blank crop as "0".
         """
         crop_w, crop_h = max(1, int(110 * wr)), max(1, int(50 * hr))
-        xt = max(0, int(orig_x - 260 * wr))
-        yt = max(0, int(orig_y - 280 * hr))
-        trophy_crop = original_screenshot[yt:yt + crop_h, xt:xt + crop_w]
-        gray = cv2.cvtColor(trophy_crop, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+        trophy_offset = None
+        for attempt in range(retries):
+            xt = max(0, int(orig_x - 260 * wr))
+            yt = max(0, int(orig_y - 280 * hr))
+            trophy_crop = original_screenshot[yt:yt + crop_h, xt:xt + crop_w]
+            gray = cv2.cvtColor(trophy_crop, cv2.COLOR_BGR2GRAY)
+            gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+            _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
 
-        trophy_results = extract_text_and_positions(thresh)
-        trophy_offset = 0
-        for t_text in trophy_results.keys():
-            clean_t = ''.join(c for c in t_text if c.isdigit())
-            if clean_t:
-                trophy_offset = int(clean_t)
+            trophy_results = extract_text_and_positions(thresh)
+            for t_text in trophy_results.keys():
+                clean_t = ''.join(c for c in t_text if c.isdigit())
+                if clean_t:
+                    trophy_offset = int(clean_t)
+                    break
+            if trophy_offset is not None:
                 break
+            if attempt < retries - 1:
+                time.sleep(retry_delay)
+                original_screenshot = self.window_controller.screenshot()
+        if trophy_offset is None:
+            print(f"WARNING: Trophy OCR found no digits after {retries} attempts at ({orig_x},{orig_y}) - defaulting to 0")
+            trophy_offset = 0
 
         xs = int(orig_x - 340 * wr)
         ys = int(orig_y - 255 * hr)
