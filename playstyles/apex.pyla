@@ -265,23 +265,57 @@ else:
         is_out_of_ammo = ammo_pct < 0.33
     is_defensive = hp_pct < CFG.get("def_hp", 0.40) or is_out_of_ammo
     is_thrower = can_attack_through_walls("attack")
-    is_ranged = attack_range > 450
-    
+    # attack_range and TILE_SIZE are both scale_factor-multiplied, so their
+    # ratio is resolution-independent (raw px thresholds like ">450" are not:
+    # at a 1280-wide capture piper's 639 reads as 426 and misclassifies her)
+    range_tiles = attack_range / TILE_SIZE
+    is_ranged = range_tiles > 8.3
+    is_melee = range_tiles <= 5.0
+
     if is_ranged:
         panic = attack_range * 0.85
     else:
         panic = safe_range * CFG["kite_mult"]
-        if attack_range > 500:
+        if range_tiles > 9.3:
             panic = max(panic, attack_range * 0.8)
     if is_defensive:
         panic = max(panic, attack_range * 1.0)
-        
+
     if is_ranged:
         ideal = attack_range * 0.90
     else:
         ideal = attack_range * CFG["hold_frac"]
-        
+
     chase = attack_range * CFG["chase_frac"]
+    if is_melee:
+        # a melee brawler's whole game is closing distance: chasing only
+        # attack_range*1.2 (~1.5 tiles for edgar) means never engaging anyone
+        chase = max(chase, TILE_SIZE * 10)
+
+    def approach(px, py):
+        # Melee: route through a bush that lies roughly on the way to the
+        # target - approach unseen instead of walking a straight open line.
+        if is_melee and bushes:
+            in_bush = any(b[0] <= player_pos[0] <= b[2] and b[1] <= player_pos[1] <= b[3] for b in bushes)
+            if not in_bush:
+                edx, edy = px - player_pos[0], py - player_pos[1]
+                edist = (edx * edx + edy * edy) ** 0.5 or 1.0
+                best, best_d = None, float('inf')
+                for b in bushes:
+                    bc = get_entity_pos(b)
+                    d = get_distance(bc, player_pos)
+                    if d < TILE_SIZE * 0.75 or d > TILE_SIZE * 5:
+                        continue
+                    if get_distance(bc, (px, py)) >= edist:
+                        continue  # bush must make progress toward the enemy
+                    bdx, bdy = bc[0] - player_pos[0], bc[1] - player_pos[1]
+                    if (bdx * edx + bdy * edy) / ((d or 1.0) * edist) < 0.5:
+                        continue  # ...and lie within ~60 deg of the enemy bearing
+                    if d < best_d:
+                        best, best_d = bc, d
+                if best is not None:
+                    return toward(best[0], best[1]), "approach-bush"
+        return toward(px, py), "approach"
     if gas:
         movement, _zone = gas, "gas"
     elif enemy_data and (is_defensive or predicted_dist < panic):
@@ -306,18 +340,19 @@ else:
                 movement, _zone = cover_vec, f"seek_cover{reason}"
             else:
                 movement, _zone = away_from_enemies(enemy_data, panic * 1.5, ex, ey), f"kite{reason}"
-    elif enemy_data and not is_thrower and walls_block_line_of_sight(player_pos, enemy_coords, walls):
+    elif enemy_data and not is_thrower and not is_melee and walls_block_line_of_sight(player_pos, enemy_coords, walls):
         # Healthy/loaded, but enemy is behind cover. Peek to find line of sight.
+        # (Melee skips this: it can't poke around corners, it needs to close in.)
         cover_vec = get_cover_vector(enemy_data, is_thrower, is_defensive, attack_range)
         if cover_vec:
             movement, _zone = cover_vec, "peek"
         else:
-            movement, _zone = toward(ex, ey), "approach"
+            movement, _zone = approach(ex, ey)
     elif predicted_dist > chase:
         movement, _ = wander()
         _zone = "disengage"
     elif predicted_dist > ideal:
-        movement, _zone = toward(ex, ey), "approach"
+        movement, _zone = approach(ex, ey)
     else:
         movement, _zone = (0, 0), "hold"
 
@@ -340,7 +375,12 @@ else:
                     use_hypercharge()
                     _acts.append("hyper")
                 if can_attack_through_walls("super"):
-                    use_super(aim=led, distance_ratio=min(1.0, max(0.1, led_dist / super_range)))
+                    ratio = min(1.0, max(0.1, led_dist / super_range))
+                    if is_melee and st == "charge":
+                        # gap-closer jump: the enemy keeps moving during the
+                        # jump animation - land ON them, not short of them
+                        ratio = min(1.0, ratio * 1.2)
+                    use_super(aim=led, distance_ratio=ratio)
                 else:
                     use_super(aim=led)
                 _acts.append("super")
