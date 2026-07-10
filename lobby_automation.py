@@ -12,6 +12,11 @@ from utils import (
 
 class LobbyAutomation:
 
+    # Static grid the brawler-selection list snaps to, used both to stabilize
+    # OCR bounding-box jitter and to locate the trophy/prestige crop regions.
+    _TROPHY_GRID_COL_CENTERS = [580, 1110, 1630]
+    _TROPHY_GRID_ROW_CENTERS = [440, 872]
+
     def __init__(self, window_controller):
         self.gray_pixels_treshold = load_toml_as_dict("./cfg/bot_config.toml").get('idle_pixels_minimum', 500)
         self.idle_reconnect_coords = load_toml_as_dict("cfg/buttons_config.toml")["idle_reconnect"]
@@ -47,6 +52,38 @@ class LobbyAutomation:
                 return True
             time.sleep(min(poll_interval, max(end_time - time.time(), 0)))
         return False
+
+    def _read_trophy_count(self, original_screenshot, orig_x, orig_y):
+        """OCR the trophy count + prestige badge near a brawler icon at the
+        given (grid-snapped) screen coordinates. Returns total trophies."""
+        xt = max(0, orig_x - 260)
+        yt = max(0, orig_y - 280)
+        trophy_crop = original_screenshot[yt:yt + 50, xt:xt + 110]
+        gray = cv2.cvtColor(trophy_crop, cv2.COLOR_BGR2GRAY)
+        gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+
+        trophy_results = extract_text_and_positions(thresh)
+        trophy_offset = 0
+        for t_text in trophy_results.keys():
+            clean_t = ''.join(c for c in t_text if c.isdigit())
+            if clean_t:
+                trophy_offset = int(clean_t)
+                break
+
+        xs = int(orig_x - 340)
+        ys = int(orig_y - 255)
+        x1, x2 = max(0, xs - 30), min(original_screenshot.shape[1], xs + 30)
+        y1, y2 = max(0, ys - 30), min(original_screenshot.shape[0], ys + 30)
+        shield_crop = original_screenshot[y1:y2, x1:x2]
+
+        hsv = cv2.cvtColor(shield_crop, cv2.COLOR_BGR2HSV)
+        # Purple badge pixels indicate a prestige (1000+) brawler
+        purple_mask = cv2.inRange(hsv, np.array([130, 100, 50]), np.array([150, 255, 255]))
+        purple_pixels = cv2.countNonZero(purple_mask)
+        prestige_level = 1 if purple_pixels > 500 else 0
+
+        return (prestige_level * 1000) + trophy_offset
 
     def select_brawler(self, brawler, get_latest_state, stop_event=None, runtime_control=None, **kwargs):
         self.window_controller.screenshot()
@@ -147,6 +184,12 @@ class LobbyAutomation:
                         orig_x = int(x * self.ocr_scale_up_factor)
                         orig_y = int(y * self.ocr_scale_up_factor)
                         
+                        # Snap to static grid coordinates to prevent OCR bounding-box variance
+                        snap_x = min(self._TROPHY_GRID_COL_CENTERS, key=lambda cx: abs(cx - orig_x))
+                        snap_y = min(self._TROPHY_GRID_ROW_CENTERS, key=lambda cy: abs(cy - orig_y))
+                        print(f"[OCR] Brawler {actual_name} center ({orig_x}, {orig_y}) snapped to grid ({snap_x}, {snap_y})")
+                        orig_x, orig_y = snap_x, snap_y
+
                         # Check for green power bar below name to verify ownership
                         xb = max(0, orig_x - 60)
                         yb = max(0, orig_y + 10)
@@ -159,33 +202,9 @@ class LobbyAutomation:
                             print(f"Skipping {actual_name} - No colorful power bar found (likely unowned)")
                             self.unowned_brawlers.add(actual_name)
                             continue
-                        
-                        # Trophy OCR
-                        xt = max(0, orig_x - 30)
-                        yt = max(0, orig_y - 250)
-                        trophy_crop = original_screenshot[yt:yt+50, xt:xt+110]
-                        gray = cv2.cvtColor(trophy_crop, cv2.COLOR_BGR2GRAY)
-                        gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-                        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
-                        
-                        trophy_results = extract_text_and_positions(thresh)
-                        trophy_offset = 0
-                        for t_text in trophy_results.keys():
-                            clean_t = ''.join(c for c in t_text if c.isdigit())
-                            if clean_t:
-                                trophy_offset = int(clean_t)
-                                break
-                        
-                        # Prestige Badge
-                        xs = max(0, orig_x - 90)
-                        ys = max(0, orig_y - 280)
-                        shield_crop = original_screenshot[ys:ys+100, xs:xs+100]
-                        hsv = cv2.cvtColor(shield_crop, cv2.COLOR_BGR2HSV)
-                        mask = cv2.inRange(hsv, np.array([130, 100, 100]), np.array([150, 255, 255]))
-                        prestige_level = 1 if cv2.countNonZero(mask) > 50 else 0
-                        
-                        total_trophies = (prestige_level * 1000) + trophy_offset
-                        
+
+                        total_trophies = self._read_trophy_count(original_screenshot, orig_x, orig_y)
+
                         if total_trophies < target_trophies:
                             y_click = y - (50 * self.ocr_scale_down_factor)
                             self.window_controller.click(int(x * self.ocr_scale_up_factor), int(y_click * self.ocr_scale_up_factor), blocking=True)
@@ -223,6 +242,22 @@ class LobbyAutomation:
                             print(f" - '{detected_name}' with match ratio {match_ratio:.2f}")
                 if matched_key:
                     x, y = clean_results[matched_key]['center']
+
+                    # Read the actual trophy count off the card (grid-snapped,
+                    # same as the "auto" path) before clicking - previously
+                    # this branch always returned 0, which overwrote the real
+                    # trophy count in the UI on every brawler selection.
+                    orig_x = int(x * self.ocr_scale_up_factor)
+                    orig_y = int(y * self.ocr_scale_up_factor)
+                    snap_x = min(self._TROPHY_GRID_COL_CENTERS, key=lambda cx: abs(cx - orig_x))
+                    snap_y = min(self._TROPHY_GRID_ROW_CENTERS, key=lambda cy: abs(cy - orig_y))
+                    try:
+                        total_trophies = self._read_trophy_count(original_screenshot, snap_x, snap_y)
+                        print(f"[OCR] Brawler {brawler} center ({orig_x}, {orig_y}) snapped to grid ({snap_x}, {snap_y}), read {total_trophies} trophies")
+                    except Exception as exc:
+                        print(f"WARNING: Trophy OCR failed for {brawler}: {exc}")
+                        total_trophies = None
+
                     y_offset = 50*self.ocr_scale_down_factor
                     y -= y_offset
                     self.window_controller.click(int(x * self.ocr_scale_up_factor), int(y * self.ocr_scale_up_factor), blocking=True)
@@ -237,7 +272,7 @@ class LobbyAutomation:
                         return "aborted"
                     self.window_controller.screenshot()
                     print("Selected brawler ", brawler)
-                    return ("success", brawler, 0)
+                    return ("success", brawler, total_trophies)
                 else:
                     print("Brawler name not found on screen, scrolling down to load more brawlers...")
 
