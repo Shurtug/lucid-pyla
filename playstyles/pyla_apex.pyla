@@ -19,6 +19,10 @@ GADGET_MODE = {
     "brock": "defensive",
 }
 DEFAULT_GADGET_MODE = "offensive"
+# Matches provide ~3 gadget charges and the button reads green while any
+# remain, so an unpaced offensive gadget dumps every charge in the first
+# seconds of the first fight. Space them out across the match.
+GADGET_OFFENSIVE_GAP = 8.0
 
 
 LOG = True    # decision logging (throttled)
@@ -424,8 +428,10 @@ else:
                 break
                 
     if use_autoaim or aim_target is not None:
-        if gmode == "offensive" and is_gadget_ready and persistent_data["time_since_holding_attack"] is None:
+        if (gmode == "offensive" and is_gadget_ready and persistent_data["time_since_holding_attack"] is None
+                and time.time() - persistent_data["last_gadget"] > GADGET_OFFENSIVE_GAP):
             use_gadget()
+            persistent_data["last_gadget"] = time.time()
             _acts.append("gadget")
         if not must_hold:
             if use_autoaim:

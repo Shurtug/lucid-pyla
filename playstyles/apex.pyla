@@ -673,10 +673,16 @@ else:
         # (ammo regenerates while idle, so "empty" without recent fire is noise).
         persistent_data["last_attack_t"] = time.time()
         if (gmode == "offensive" and is_gadget_ready and persistent_data["time_since_holding_attack"] is None
-                and time.time() - persistent_data["last_gadget"] > GADGET_OFFENSIVE_GAP
-                and enemy_dist is not None and enemy_dist <= attack_range * 0.7):
-            # paced + value-gated: spend a charge on a committed in-range shot,
-            # not on a fringe poke, and never dump the whole budget at once
+                and time.time() - persistent_data["last_gadget"] > GADGET_OFFENSIVE_GAP):
+            # Being inside this block already means a valid, hittable target
+            # was found (use_autoaim or aim_target) - that's the "not a wasted
+            # shot" guarantee. An earlier version also required
+            # enemy_dist <= attack_range*0.7, but ranged/sniper/thrower hold
+            # their OWN kiting distance at 0.75-0.90x range (see the ideal=
+            # assignments above) - that gate was mathematically unreachable
+            # for most of the roster and silently disabled gadgets for them.
+            # GADGET_OFFENSIVE_GAP alone is what prevents dumping the whole
+            # charge budget in one burst.
             use_gadget()
             persistent_data["last_gadget"] = time.time()
             _acts.append("gadget")
