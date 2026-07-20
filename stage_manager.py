@@ -4,7 +4,8 @@ import cv2
 
 from state_finder import get_state
 from trophy_observer import TrophyObserver, MatchResult
-from utils import find_template_center, load_toml_as_dict, notify_user, save_brawler_data
+from utils import find_template_center, load_toml_as_dict, notify_user, save_brawler_data, config_bool, load_general_config
+from bs_official_api import get_player_info as bs_get_player_info, get_brawler_trophies, get_brawler_power
 
 try:
     from early_access.early_access import get_brawler_stats, get_player_info
@@ -68,8 +69,13 @@ class StageManager:
         self.matches_since_last_webhook_ping = 0
         self.ping_every_x_match = load_toml_as_dict("cfg/webhook_config.toml")['ping_every_x_match']
         self.runtime_control = runtime_control
-        if early_access:
-            self.player_tag = load_toml_as_dict("./cfg/general_config.toml")['player_tag']
+        general_cfg = load_general_config()
+        # player_tag used to be loaded only for the paid early_access module;
+        # the official-API path (bs_official_api.py) needs it too, so it's
+        # now always loaded (empty string is a harmless default either way).
+        self.player_tag = general_cfg.get('player_tag', '')
+        self.brawlstars_api_key = general_cfg.get('brawlstars_api_key', '')
+        self.use_royaleapi_proxy = config_bool(general_cfg.get('use_royaleapi_proxy'), False)
         self.ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
         self.playstyle_info = playstyle_info
         self.get_latest_state = state_getting
@@ -121,6 +127,26 @@ class StageManager:
                         print(f"Warning: Trophies or win streak from API do not match current values. This may indicate a desync. API values: trophies={trophies}, win_streak={win_streak}. Current values: trophies={self.Trophy_observer.current_trophies}, win_streak={self.Trophy_observer.win_streak}")
                     self.Trophy_observer.current_trophies = trophies
                     self.Trophy_observer.win_streak = win_streak
+        elif self.brawlstars_api_key and self.player_tag:
+            # Same idea via Supercell's official API directly, independent of
+            # the paid early_access module. current_trophies tracks ONE
+            # brawler's progress toward its own push_until target (seeded
+            # from brawlers_pick_data[0]['trophies'] in main.py), not the
+            # account total - get_brawler_trophies mirrors the early_access
+            # branch above (get_brawler_stats), just without win_streak,
+            # which Supercell's API doesn't expose.
+            print("Waiting 3 seconds for API to update with latest data...")
+            time.sleep(3)
+            player_info = bs_get_player_info(self.player_tag, self.brawlstars_api_key, self.use_royaleapi_proxy)
+            if not player_info:
+                print("Brawl Stars API lookup failed - check brawlstars_api_key and player_tag. Skipping API stat refresh.")
+            else:
+                current_brawler = self.brawlers_pick_data[0]['brawler']
+                trophies = get_brawler_trophies(player_info, current_brawler)
+                if trophies is not None:
+                    if self.Trophy_observer.current_trophies is not None and trophies != self.Trophy_observer.current_trophies:
+                        print(f"Warning: {current_brawler}'s trophies from API ({trophies}) do not match current tracked value ({self.Trophy_observer.current_trophies}). This may indicate a desync. Correcting to the API value.")
+                    self.Trophy_observer.current_trophies = trophies
         print("state is lobby, starting game")
         values = {
             "trophies": self.Trophy_observer.current_trophies,
@@ -288,7 +314,12 @@ class StageManager:
 
             if time.time() - self.time_since_last_stat_change > 25:
                 current_brawler = self.brawlers_pick_data[0]['brawler']
-                power_level = None if not early_access else get_brawler_stats(get_player_info(self.player_tag), current_brawler, power_level=True)[2]
+                if early_access:
+                    power_level = get_brawler_stats(get_player_info(self.player_tag), current_brawler, power_level=True)[2]
+                elif self.brawlstars_api_key and self.player_tag:
+                    power_level = get_brawler_power(bs_get_player_info(self.player_tag, self.brawlstars_api_key, self.use_royaleapi_proxy), current_brawler)
+                else:
+                    power_level = None
                 self.Trophy_observer.add_trophies(parsed_result, current_brawler, self.playstyle_info, power_level)
                 self.Trophy_observer.add_win(parsed_result)
                 self.time_since_last_stat_change = time.time()

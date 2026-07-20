@@ -6,8 +6,9 @@ from utils import (
     EasyOCRInitializationError,
     count_hsv_pixels,
     extract_text_and_positions,
-    load_toml_as_dict, load_all_brawlers_names, config_bool,
+    load_toml_as_dict, load_all_brawlers_names, config_bool, load_general_config,
 )
+from bs_official_api import get_player_info, get_brawler_trophies_map
 
 
 class LobbyAutomation:
@@ -17,6 +18,11 @@ class LobbyAutomation:
     _TROPHY_GRID_COL_CENTERS = [580, 1110, 1630]
     _TROPHY_GRID_ROW_CENTERS = [440, 872]
 
+    # How long a fetched trophies map stays valid before re-querying the API.
+    # Trophies don't change mid-scan; this just bounds staleness across a
+    # long-running bot session (many matches) without hammering the API.
+    _API_TROPHIES_TTL = 120.0
+
     def __init__(self, window_controller):
         self.gray_pixels_treshold = load_toml_as_dict("./cfg/bot_config.toml").get('idle_pixels_minimum', 500)
         self.idle_reconnect_coords = load_toml_as_dict("cfg/buttons_config.toml")["idle_reconnect"]
@@ -25,6 +31,34 @@ class LobbyAutomation:
         self.all_brawlers_names = load_all_brawlers_names()
         self.window_controller = window_controller
         self.verbose_debug = config_bool(load_toml_as_dict("cfg/debug_settings.toml").get('verbose_debug'), False)
+        general_cfg = load_general_config()
+        self.player_tag = general_cfg.get("player_tag", "")
+        self.brawlstars_api_key = general_cfg.get("brawlstars_api_key", "")
+        self.use_royaleapi_proxy = config_bool(general_cfg.get("use_royaleapi_proxy"), False)
+        self._api_trophies_cache = {}
+        self._api_trophies_cache_at = 0.0
+
+    def _get_api_trophies_map(self):
+        """{normalized_brawler_name: trophies} from Supercell's official API,
+        or {} if no key/tag is configured or the request fails - callers treat
+        a miss as "fall back to OCR", so this is always safe to call."""
+        if not self.brawlstars_api_key or not self.player_tag:
+            return {}
+        if time.time() - self._api_trophies_cache_at < self._API_TROPHIES_TTL:
+            return self._api_trophies_cache
+        player_info = get_player_info(self.player_tag, self.brawlstars_api_key, self.use_royaleapi_proxy)
+        self._api_trophies_cache = get_brawler_trophies_map(player_info) if player_info else {}
+        self._api_trophies_cache_at = time.time()
+        return self._api_trophies_cache
+
+    def _get_trophy_count(self, original_screenshot, orig_x, orig_y, wr, hr, brawler_name):
+        """Trophy count for `brawler_name` (already normalized to the
+        squashed-lowercase names.json convention): the official API's exact
+        figure when available, else the existing OCR read."""
+        api_trophies = self._get_api_trophies_map().get(brawler_name)
+        if api_trophies is not None:
+            return api_trophies
+        return self._read_trophy_count(original_screenshot, orig_x, orig_y, wr, hr)
 
     def check_for_idle(self, frame):
         wr = self.window_controller.width_ratio
@@ -124,6 +158,7 @@ class LobbyAutomation:
         c = 0
         print("Automatic brawler selection started for", brawler)
         shop_counter = 0
+        misclick_recoveries = 0
         
         target_trophies = kwargs.get("target_trophies", 1000)
         
@@ -146,7 +181,9 @@ class LobbyAutomation:
 
             print("Extracting text on current screen...")
             try:
-                results = extract_text_and_positions(screenshot)
+                # min_prob filters EasyOCR's low-confidence junk strings, which
+                # otherwise pollute name matching (and could fuzzy-match wrongly).
+                results = extract_text_and_positions(screenshot, min_prob=0.3)
             except EasyOCRInitializationError as exc:
                 raise RuntimeError(
                     f"Automatic brawler selection could not start OCR: {exc}"
@@ -172,6 +209,23 @@ class LobbyAutomation:
                     return "stuck"
                 continue
             elif current_state != "brawler_selection":
+                # A swipe misread as a tap opens a brawler's detail page (or
+                # drops us back to the lobby). Recover instead of aborting:
+                # press back / reopen the brawler menu and keep scanning.
+                if misclick_recoveries < 4:
+                    misclick_recoveries += 1
+                    if current_state == "lobby":
+                        print(f"Brawler menu closed unexpectedly (state=lobby), reopening it ({misclick_recoveries}/4)...")
+                        menu_x, menu_y = load_toml_as_dict("cfg/buttons_config.toml")["brawlers_menu"]
+                        self.window_controller.click(menu_x, menu_y, already_include_ratio=False, blocking=True)
+                    else:
+                        print(f"Left brawler selection (state={current_state}), likely misclicked a brawler while scrolling - pressing back ({misclick_recoveries}/4)...")
+                        back_x, back_y = load_toml_as_dict("cfg/buttons_config.toml")["back_button"]
+                        self.window_controller.click(back_x, back_y, already_include_ratio=False, blocking=True)
+                    if self._sleep_interruptible(1.5, runtime_control, stop_event):
+                        print("Brawler selection aborted by user.")
+                        return "aborted"
+                    continue
                 print("Latest screenshot is no longer of the lobby, aborting brawler selection...")
                 return "stuck"
             if brawler == "auto":
@@ -232,7 +286,7 @@ class LobbyAutomation:
                             self.unowned_brawlers.add(actual_name)
                             continue
 
-                        total_trophies = self._read_trophy_count(original_screenshot, orig_x, orig_y, wr, hr)
+                        total_trophies = self._get_trophy_count(original_screenshot, orig_x, orig_y, wr, hr, actual_name)
 
                         if total_trophies < target_trophies:
                             y_click = y - (50 * self.ocr_scale_down_factor)
@@ -261,6 +315,32 @@ class LobbyAutomation:
                             matched_key = detected_name
                             print(f"Matched detected name '{detected_name}' to brawler '{brawler}' using alias list.")
                             break
+                    if matched_key is None:
+                        # Fuzzy fallback: EasyOCR routinely garbles one or two
+                        # letters ("colefte" for colette), and an exact-only
+                        # match then wastes a full scroll pass. Accept the best
+                        # close match, but never a text that is itself another
+                        # brawler's exact name or alias (so "penny" can't be
+                        # taken for "jenny"-style near misses).
+                        import difflib
+                        targets = [brawler] + [a for a in self.all_brawlers_names.get(brawler, [])]
+                        best_key, best_ratio = None, 0.0
+                        for detected_name in clean_results.keys():
+                            if len(detected_name) < 4:
+                                continue
+                            for t in targets:
+                                r = difflib.SequenceMatcher(None, detected_name, t).ratio()
+                                if r > best_ratio:
+                                    best_ratio, best_key = r, detected_name
+                        if best_key is not None and best_ratio >= 0.72:
+                            belongs_to_other = any(
+                                best_key == other or best_key in aliases
+                                for other, aliases in self.all_brawlers_names.items()
+                                if other != brawler
+                            )
+                            if not belongs_to_other:
+                                matched_key = best_key
+                                print(f"Fuzzy-matched OCR text '{best_key}' to brawler '{brawler}' (ratio {best_ratio:.2f})")
     
                 if self.verbose_debug:
                     print("OCR detected the following potential matches for the brawler name:")
@@ -283,10 +363,10 @@ class LobbyAutomation:
                     snap_x = min(col_options, key=lambda cx: abs(cx - orig_x))
                     snap_y = min(row_options, key=lambda cy: abs(cy - orig_y))
                     try:
-                        total_trophies = self._read_trophy_count(original_screenshot, snap_x, snap_y, wr, hr)
-                        print(f"[OCR] Brawler {brawler} center ({orig_x}, {orig_y}) snapped to grid ({snap_x:.0f}, {snap_y:.0f}), read {total_trophies} trophies")
+                        total_trophies = self._get_trophy_count(original_screenshot, snap_x, snap_y, wr, hr, brawler)
+                        print(f"Brawler {brawler} center ({orig_x}, {orig_y}) snapped to grid ({snap_x:.0f}, {snap_y:.0f}), trophies={total_trophies}")
                     except Exception as exc:
-                        print(f"WARNING: Trophy OCR failed for {brawler}: {exc}")
+                        print(f"WARNING: Trophy lookup failed for {brawler}: {exc}")
                         total_trophies = None
 
                     y_offset = 50*self.ocr_scale_down_factor
@@ -307,17 +387,22 @@ class LobbyAutomation:
                 else:
                     print("Brawler name not found on screen, scrolling down to load more brawlers...")
 
+            # Scroll swipes start on a brawler card (there is no empty area in
+            # the list), so they MUST register as drags, never taps: keep the
+            # travel well above Android's touch slop (the old 50px first nudge
+            # was routinely read as a tap on the bottom-right brawler) and use
+            # settle= so the finger stops before lifting (no fling, no tap).
             if c == 0:
                 wr = self.window_controller.width_ratio
                 hr = self.window_controller.height_ratio
-                self.window_controller.swipe(int(1700 * wr), int(900 * hr), int(1700 * wr), int(850 * hr), duration=0.5)
+                self.window_controller.swipe(int(1700 * wr), int(900 * hr), int(1700 * wr), int(780 * hr), duration=0.5, blocking=True, settle=0.2)
                 if self._sleep_interruptible(3, runtime_control, stop_event):
                     print("Brawler selection aborted by user.")
                     return "aborted"
                 c += 1
                 continue
 
-            self.window_controller.swipe(int(1700 * wr), int(900 * hr), int(1700 * wr), int(650 * hr), duration=0.5)
+            self.window_controller.swipe(int(1700 * wr), int(900 * hr), int(1700 * wr), int(650 * hr), duration=0.5, blocking=True, settle=0.2)
             if self._sleep_interruptible(3, runtime_control, stop_event):
                 print("Brawler selection aborted by user.")
                 return "aborted"

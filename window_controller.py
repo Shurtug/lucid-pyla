@@ -384,7 +384,7 @@ class WindowController:
             if self.action_queue.qsize() <= 1:
                 self.action_queue.put(('press', (key,), {'delay': delay, 'touch_up': touch_up, 'touch_down': touch_down}))
 
-    def _swipe_sync(self, start_x, start_y, end_x, end_y, duration=0.2):
+    def _swipe_sync(self, start_x, start_y, end_x, end_y, duration=0.2, settle=0.0):
         dist_x = end_x - start_x
         dist_y = end_y - start_y
         distance = math.sqrt(dist_x ** 2 + dist_y ** 2)
@@ -403,14 +403,26 @@ class WindowController:
             cy = start_y + dist_y * t
             time.sleep(step_delay)
             self.touch_move(int(cx), int(cy), pointer_id=self.PID_ATTACK)
+        # Hold the finger still at the end point before lifting: releasing
+        # mid-motion gives the gesture fling velocity, and for short swipes
+        # Android's tap heuristic can read the whole thing as a click on
+        # whatever is under the finger (e.g. a brawler card while scrolling
+        # the selection list). A zero-velocity release is unambiguous drag.
+        if settle > 0:
+            settle_moves = 3
+            for _ in range(settle_moves):
+                time.sleep(settle / settle_moves)
+                self.touch_move(int(end_x), int(end_y), pointer_id=self.PID_ATTACK)
+        else:
+            time.sleep(0.04)  # Ensure Android registers the final drag coordinate before release
         self.touch_up(int(end_x), int(end_y), pointer_id=self.PID_ATTACK)
 
-    def swipe(self, start_x, start_y, end_x, end_y, duration=0.2, blocking=False):
+    def swipe(self, start_x, start_y, end_x, end_y, duration=0.2, blocking=False, settle=0.0):
         if blocking:
-            self._swipe_sync(start_x, start_y, end_x, end_y, duration)
+            self._swipe_sync(start_x, start_y, end_x, end_y, duration, settle)
         else:
             if self.action_queue.qsize() <= 1:
-                self.action_queue.put(('swipe', (start_x, start_y, end_x, end_y), {'duration': duration}))
+                self.action_queue.put(('swipe', (start_x, start_y, end_x, end_y), {'duration': duration, 'settle': settle}))
 
     def _aim_swipe_sync(self, key, dir_x, dir_y, duration=0.06, distance_ratio=1.0):
         if key not in press_coords_dict:
@@ -425,7 +437,12 @@ class WindowController:
         if mag < 1e-6:
             self._press_sync(key)
             return
-        radius = self.aim_drag_radius * (self.scale_factor or 1) * distance_ratio
+            
+        # Account for the virtual joystick deadzone in Brawl Stars (standard is ~25-30% of max drag)
+        deadzone = 0.30
+        effective_ratio = deadzone + distance_ratio * (1.0 - deadzone)
+        
+        radius = self.aim_drag_radius * (self.scale_factor or 1) * effective_ratio
         end_x = center_x + (dir_x / mag) * radius
         end_y = center_y + (dir_y / mag) * radius
         self._swipe_sync(center_x, center_y, end_x, end_y, duration=duration)

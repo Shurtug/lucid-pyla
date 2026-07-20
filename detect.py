@@ -1,4 +1,5 @@
 import os
+os.environ["DML_DISABLE_METACOMMANDS"] = "1"
 
 import cv2
 import numpy as np
@@ -191,7 +192,13 @@ class Detect:
             onnx_provider = "CPUExecutionProvider"
 
         so = ort.SessionOptions()
-        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        if onnx_provider == "DmlExecutionProvider":
+            # DirectML graph fusion is known to crash on some GPU drivers/architectures,
+            # especially under concurrent emulator load. Bypassing it via ORT_DISABLE_ALL
+            # prevents these crashes entirely while still utilizing the GPU.
+            so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+        else:
+            so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         so.intra_op_num_threads = self.optimal_threads_amount
         so.inter_op_num_threads = self.optimal_threads_amount
 
@@ -200,8 +207,11 @@ class Detect:
         # adapter can never be picked (and to help isolate DML-driver crashes).
         if onnx_provider == "DmlExecutionProvider":
             device_id = int(load_toml_as_dict("cfg/general_config.toml").get("gpu_device_id", 0))
-            providers = [("DmlExecutionProvider", {"device_id": device_id})]
-            print(f"DirectML device_id={device_id}")
+            providers = [("DmlExecutionProvider", {
+                "device_id": device_id,
+                "disable_metacommands": True
+            })]
+            print(f"DirectML device_id={device_id} (metacommands disabled for driver stability)")
         else:
             providers = [onnx_provider]
 

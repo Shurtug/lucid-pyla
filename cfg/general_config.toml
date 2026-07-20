@@ -1,20 +1,7 @@
-# CPU inference. GPU (DirectML) was retried on 2026-07-10 and reproducibly
-# segfaults (exit 139, no Python traceback - a native driver crash) within
-# ~20s of the bot loop starting, matching the original myBlobMmioRead /
-# uCountStall AMD driver stall: DirectML + LDPlayer + scrcpy all hammering
-# the same discrete GPU. In isolation (no emulator) DML benchmarks at
-# ~2ms/inference with no crash, so this only manifests under real
-# concurrent GPU load - do not re-enable "auto"/"gpu" without a driver fix.
 cpu_or_gpu = "cpu"
 gpu_device_id = 0
 max_ips = "auto"
-# Run entity detection for the next frame in a worker thread while the main
-# thread processes the current one (ONNX releases the GIL). ~2x iteration rate
-# on CPU inference for one frame of extra decision latency. Set false to disable.
 pipeline_inference = true
-# scrcpy capture. Lower max_width = lighter/steadier stream on flaky emulators
-# (fixes LDPlayer freezes + native decode crashes). 0 = full native res (1920).
-# Detection uses 640px internally, so 1280 is visually identical for the model.
 scrcpy_max_width = 1280
 scrcpy_bitrate = 4000000
 trophies_multiplier = 1
@@ -23,8 +10,10 @@ emulator_port = 5037
 api_base_url = "default"
 brawl_stars_package = "com.supercell.brawlstars"
 ocr_scale_down_factor = 0.8
-used_threads = "auto"
-player_tag = ""
+used_threads = 4
+player_tag = "#"
+brawlstars_api_key = ""
+use_royaleapi_proxy = false
 default_trophy_target = 1000
 auto_load_queue_on_startup = true
 play_order = "in_order"

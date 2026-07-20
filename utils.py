@@ -29,10 +29,12 @@ except (ImportError, ModuleNotFoundError):
         return None
     early_access = False
 
-def extract_text_and_positions(image_path):
+def extract_text_and_positions(image_path, min_prob=0.0):
     results = reader.readtext(image_path)
     text_details = {}
     for (bbox, text, prob) in results:
+        if prob < min_prob:
+            continue
         top_left, top_right, bottom_right, bottom_left = bbox
         cx = (top_left[0] + top_right[0] + bottom_right[0] + bottom_left[0]) / 4
         cy = (top_left[1] + top_right[1] + bottom_right[1] + bottom_left[1]) / 4
@@ -123,6 +125,18 @@ def load_toml_as_dict(file_path, cache=True):
 def invalidate_toml_cache(file_path):
     full_path = PROJECT_ROOT / str(file_path).lstrip('/\\')
     del cached_toml[str(full_path)]
+
+
+def load_general_config(cache=True):
+    """cfg/general_config.toml, with cfg/secrets.toml values overlaid on top
+    when present. secrets.toml is gitignored and holds anything that
+    shouldn't end up committed (API keys, player tags) - general_config.toml
+    stays safe to commit with those fields left blank. Missing secrets.toml
+    is normal (most installs won't have one) and silently no-ops, since
+    load_toml_as_dict already returns {} for a missing file."""
+    config = dict(load_toml_as_dict("cfg/general_config.toml", cache=cache))
+    config.update(load_toml_as_dict("cfg/secrets.toml", cache=cache))
+    return config
 
 
 def save_dict_as_toml(data, file_path):

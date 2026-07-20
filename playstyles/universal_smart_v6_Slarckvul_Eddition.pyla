@@ -1,0 +1,1157 @@
+{"name": "Slarckvul RUSH mode v6 - Aggressive", "description": "Feita para Obliterar, Boa pra brawlers com muito dano e com time to kill rapido", "brawlers": ["all"], "gamemodes": ["all"], "author": "Slarck-Steam", "date": "2026-05-11"}
+
+# ═══════════════════════════════════════════════════════
+#  SETUP
+# ═══════════════════════════════════════════════════════
+
+_brawler_name = brawler or current_brawler
+brawler_info = brawlers_info.get(_brawler_name)
+
+if not brawler_info:
+    raise ValueError(f"Brawler '{_brawler_name}' not found in brawlers_info.")
+
+persistent_data.setdefault("time_since_holding_attack", None)
+# None = the gadget has never been fired this match, so the first use isn't
+# gated by the reuse cooldown (story-014 fix: 0.0 made the cooldown block the
+# very first gadget for a full cooldown from match start, so the charge budget
+# was never spent).
+persistent_data.setdefault("last_gadget_use", None)
+# How many gadget charges we've spent this match (story-006). Capped by
+# gadget_charges so the bot never fires more gadgets than the match provides.
+persistent_data.setdefault("gadget_uses", 0)
+# Last time we fired the super, so we don't mash use_super every tick while the
+# button reads ready (story-005: don't waste the charge).
+persistent_data.setdefault("last_super_use", 0.0)
+# Frame-to-frame history of the tracked target, used to lead moving enemies.
+persistent_data.setdefault("last_enemy_pos", None)
+persistent_data.setdefault("last_enemy_time", None)
+# Sustained-pressure counter (story-007). The engine exposes NO HP, so "low HP /
+# under fire" can't be read; instead we count consecutive ticks a hittable enemy
+# has been in range (a geometric "we're plausibly taking fire" proxy) and prefer
+# cover once it builds up.
+persistent_data.setdefault("threat_ticks", 0)
+# Virtual ammo (ammo/reload pacing). The engine exposes no live ammo count, so
+# we model a magazine that depletes on fire and regenerates at reload_speed. Only
+# used to avoid dribbling the last shot on a marginal poke; None = uninitialised.
+persistent_data.setdefault("ammo", None)
+persistent_data.setdefault("last_ammo_time", None)
+# Anti-aim strafing (story-012). The old strafe flipped side on a FIXED 2s clock
+# parity, so a foe could pre-aim the reversal. Instead we hold a side for a
+# RANDOMISED interval, so the direction changes are irregular and hard to lead.
+# Seeded RNG + fake clock keep this byte-stable in the deterministic sim.
+persistent_data.setdefault("strafe_side", None)
+persistent_data.setdefault("strafe_flip_at", None)
+# Distance-band kite mode (story-013). The kite archetypes pick retreat/strafe/
+# approach from the enemy distance vs two band edges; near an edge, jitter used
+# to flip the mode every tick. We remember the current mode and only switch when
+# the distance crosses an edge by a margin (hysteresis), damping the dithering.
+persistent_data.setdefault("kite_mode", None)
+# Out-run estimate (story-015). We can't read the enemy's move speed, but we CAN
+# observe it: enemy and player positions are in the same px space, so comparing
+# our peak observed speed to the enemy's tells us whether we can kite it out of
+# its range. Against a clearly slower foe (e.g. a slow tanky sniper) we push the
+# spacing to the far edge of our range to exploit both our reach and its shots'
+# flight time; against an equal/faster foe we hold the normal band.
+persistent_data.setdefault("peak_own_speed", 0.0)
+persistent_data.setdefault("peak_enemy_speed", 0.0)
+persistent_data.setdefault("last_own_pos", None)
+persistent_data.setdefault("last_speed_enemy_pos", None)
+persistent_data.setdefault("last_speed_time", None)
+persistent_data.setdefault("speed_samples", 0)
+
+must_hold = must_brawler_hold_attack(_brawler_name, brawlers_info)
+
+
+# ═══════════════════════════════════════════════════════
+#  EXTENDED BRAWLER STATS  (story-003: Pierce & friends)
+# ═══════════════════════════════════════════════════════
+# Fallback stat profiles for brawlers whose data may be missing from
+# brawlers_info. Values here are safe placeholders — tune them to real
+# numbers when you have them. NOTE (story-003 fix): boolean stats are written
+# as 0/1, NOT Python True/False. The previous version used True/False here,
+# which the spec flags as the prior failure cause; 0/1 is the .pyla-safe
+# notation the skeleton convention expects and still works with bool()/if.
+BRAWLER_STATS_FALLBACK = {
+    # Real Pierce data mapped from Tale_stars.json (PIECRE_CONFIG).
+    "pierce": {
+        "safe_range": 250.0,            # no explicit value in data; sniper-ish spacing
+        "attack_range": 600.0,          # Attack_Range
+        "attack_width": 40.0,           # Attack_width (44 on last ammo)
+        "super_range": 510.0,           # Super_Range
+        "super_width": 34.0,            # Super_width
+        "movement_speed": 144.0,        # Movement_speed (game tile units)
+        "reload_speed": 3.0,            # Attack_Reload
+        "projectile_speed": 4000.0,     # Attack_Projectile_speed
+        "super_type": "damage",         # piercing damage shot, not spawn/charge
+        "has_gadget": 1,                # 1/0 boolean — "You Only Brawl Twice" available
+        "gadget_cooldown": 18.0,        # You_Only_Brawl_Twice_Cooldown
+        "gadget_charges": 3,            # gadget uses available per match
+        "ammo": 3,                      # magazine size (ammo/reload pacing)
+        "ignore_walls_for_attacks": 0,  # 1/0 boolean — Pierce shots respect walls
+    },
+}
+
+def get_stat(key, default=None):
+    """Resolve a brawler stat: brawlers_info first, then the fallback table,
+    then the supplied default. Never raises."""
+    if isinstance(brawler_info, dict) and key in brawler_info:
+        return brawler_info[key]
+    fb = BRAWLER_STATS_FALLBACK.get(_brawler_name)
+    if isinstance(fb, dict) and key in fb:
+        return fb[key]
+    return default
+
+def _as_float(value, default):
+    try:
+        result = float(value)
+        return result if result else float(default)
+    except (TypeError, ValueError):
+        return float(default)
+
+# Engine-scaled ranges, then refined by richer per-brawler data when present.
+safe_range, attack_range, super_range = get_brawler_range(_brawler_name)
+attack_range = _as_float(get_stat("attack_range", attack_range), attack_range or 400.0)
+super_range  = _as_float(get_stat("super_range", super_range), super_range or attack_range)
+safe_range   = _as_float(get_stat("safe_range", safe_range), safe_range or 0.0)
+attack_width = _as_float(get_stat("attack_width", TILE_SIZE), TILE_SIZE)
+# Super lane width, used to line the super up on as many enemies as possible
+# (story-005). Falls back to the normal attack width when there's no data.
+super_width  = _as_float(get_stat("super_width", attack_width), attack_width)
+move_speed   = _as_float(get_stat("movement_speed", 720.0), 720.0)
+# Projectile speed drives target leading (predictive aim). Not present in
+# brawlers_info for most brawlers, so it defaults to 0 -> leading disabled and
+# the bot simply aims at the target's current position.
+projectile_speed = _as_float(get_stat("projectile_speed", 0.0), 0.0)
+
+# Gadget data as named constants (booleans as 0/1). Used by the attack logic
+# to gate gadget usage and pace re-fires by the real cooldown instead of a
+# magic number.
+has_gadget      = bool(get_stat("has_gadget", 1))
+gadget_cooldown = _as_float(get_stat("gadget_cooldown", 3.0), 3.0)
+# Per-match gadget charge budget (story-006). brawlers_info carries no charge
+# count, so this is a safe fallback (~3, the common Brawl Stars gadget budget).
+# is_gadget_ready is the engine's live availability gate; this is the total cap
+# so the bot won't keep "using" a gadget the match has run out of.
+gadget_charges  = max(0, int(_as_float(get_stat("gadget_charges", 3.0), 3.0)))
+# Re-fire pacing (story-014). The real per-match limit is gadget_charges; between
+# uses we only need a short anti-spam gap so we don't dump every charge at once.
+# We pace by the brawler's own cooldown but CAP the wait at GADGET_REUSE_GAP so a
+# coarse cooldown (e.g. Pierce's ~18s, ~one use per 18s match) can't strand the
+# rest of the 3-charge budget unused — the burst is what cracks a high-HP tank.
+GADGET_REUSE_GAP = 2.0
+gadget_reuse_gap = min(gadget_cooldown, GADGET_REUSE_GAP) if gadget_cooldown > 0 else GADGET_REUSE_GAP
+# Supers that pierce walls don't need a clear line of sight for the super
+# hit-check (story-005), so we can commit them even through cover.
+super_ignores_walls = bool(get_stat("ignore_walls_for_supers", False))
+
+# ---- Ammo / reload pacing --------------------------------------------------
+# No live ammo count is exposed, so we model one: a virtual magazine of max_ammo
+# rounds that regenerates one round every reload_speed seconds. This only shapes
+# the DECISION to hold a *marginal* poke when the reserve runs dry — the engine
+# still owns real ammo, so we never hard-block a shot. Brawlers without reload
+# data (the 103 that aren't Pierce) set has_reload_data False and fire freely,
+# so the feature degrades to a no-op for them.
+max_ammo       = max(1, int(_as_float(get_stat("ammo", 3.0), 3.0)))
+reload_speed   = _as_float(get_stat("reload_speed", 0.0), 0.0)
+has_reload_data = reload_speed > 0.0
+
+# ---- 1vN awareness ---------------------------------------------------------
+# Radius (px) within which an enemy counts as an active threat for the
+# outnumbered check, and the range within which a teammate counts as support.
+THREAT_COUNT_RADIUS  = attack_range * 1.25
+SUPPORT_RADIUS       = attack_range * 1.5
+
+# Mobility factor around a 720px/s baseline (clamped 0.6–1.4). Faster brawlers
+# can hold longer engagement range and reposition out of danger, so they favour
+# a touch more kiting distance; slower brawlers must commit to closing the gap.
+# Applied to the archetype keep-distance thresholds so move_speed is a live
+# input to movement, not a dead constant.
+mobility = min(1.4, max(0.6, move_speed / 720.0))
+
+player_pos = get_entity_pos(player_data)
+
+movement = (0, 0)
+
+
+# ═══════════════════════════════════════════════════════
+#  VECTOR / MOVEMENT HELPERS
+# ═══════════════════════════════════════════════════════
+
+def vec_len(x, y):
+    return math.sqrt(x * x + y * y)
+
+def normalize_move(x, y, radius=JOYSTICK_RADIUS):
+    length = vec_len(x, y)
+    if length <= 0:
+        return (0, 0)
+    scale = radius / length
+    return (x * scale, y * scale)
+
+def clamp_move(move):
+    # movement components must each stay within +/- JOYSTICK_RADIUS.
+    x = max(-JOYSTICK_RADIUS, min(JOYSTICK_RADIUS, float(move[0])))
+    y = max(-JOYSTICK_RADIUS, min(JOYSTICK_RADIUS, float(move[1])))
+    return (x, y)
+
+# ---- Wall check ------------------------------------------------------------
+# skeleton.py declares is_path_blocked(player_box, move_direction: str, ...).
+# The safety layer works in (x, y) vectors, so we convert to a compass token.
+# If YOUR engine actually wants a raw (x, y) vector here, flip the flag below.
+WALL_CHECK_USES_DIRECTION_STRING = True
+
+# Single source of truth for the 8 direction tokens — edit here if your
+# engine spells them differently (e.g. "upright" instead of "up_right").
+_COMPASS = ["right", "up_right", "up", "up_left",
+            "left", "down_left", "down", "down_right"]
+
+def _vec_to_direction(move):
+    x, y = float(move[0]), float(move[1])
+    if x == 0 and y == 0:
+        return "up"
+    # Screen coords: -y points up, so negate y for a math-style angle.
+    ang = math.atan2(-y, x)
+    idx = int(round(ang / (math.pi / 4))) % 8
+    return _COMPASS[idx]
+
+def is_blocked(move):
+    # Defensive: any signature/format mismatch degrades to "not blocked"
+    # rather than crashing the whole tick.
+    try:
+        if WALL_CHECK_USES_DIRECTION_STRING:
+            direction = _vec_to_direction(move)
+            dist = vec_len(move[0], move[1]) or None
+            return bool(is_path_blocked(player_data, direction, walls, dist))
+        return bool(is_path_blocked(player_data, move, walls))
+    except Exception:
+        return False
+
+def move_lands_in_bush(move):
+    # Would a step in this direction put the player inside a bush tile?
+    if not bushes:
+        return False
+    nx = player_pos[0] + move[0]
+    ny = player_pos[1] + move[1]
+    for b in bushes:
+        if len(b) < 4:
+            continue
+        if b[0] <= nx <= b[2] and b[1] <= ny <= b[3]:
+            return True
+    return False
+
+def is_bush_unsafe(move):
+    # Entering a bush is risky mainly when an enemy is close enough to be
+    # ambushing from it. With no nearby enemy a bush is fine (even useful as
+    # cover), so we only treat it as unsafe under threat.
+    if enemy_coords is None or not bushes:
+        return False
+    if enemy_distance is None or enemy_distance > attack_range + TILE_SIZE * 2:
+        return False
+    return move_lands_in_bush(move)
+
+def is_unsafe(move):
+    # A move is unsafe if it walks into a wall or into a threatened bush.
+    return is_blocked(move) or is_bush_unsafe(move)
+
+def first_safe(moves, fallback=None):
+    # Prefer a fully safe move (no wall, no threatened bush); otherwise fall
+    # back to one that at least isn't wall-blocked; otherwise the fallback.
+    for move in moves:
+        if not is_unsafe(move):
+            return move
+    for move in moves:
+        if not is_blocked(move):
+            return move
+    if fallback is not None:
+        return fallback
+    if moves:
+        return moves[0]
+    return (0, 0)
+
+# Kept as a wall-only variant for callers that must ignore bush heuristics.
+def first_unblocked(moves, fallback=None):
+    for move in moves:
+        if not is_blocked(move):
+            return move
+    if fallback is not None:
+        return fallback
+    if moves:
+        return moves[0]
+    return (0, 0)
+
+def move_toward(target_pos):
+    dx = target_pos[0] - player_pos[0]
+    dy = target_pos[1] - player_pos[1]
+    full = normalize_move(dx, dy)
+    x_only = normalize_move(dx, 0)
+    y_only = normalize_move(0, dy)
+    return first_safe([full, x_only, y_only], full)
+
+def move_away_from(target_pos):
+    dx = player_pos[0] - target_pos[0]
+    dy = player_pos[1] - target_pos[1]
+    full = normalize_move(dx, dy)
+    x_only = normalize_move(dx, 0)
+    y_only = normalize_move(0, dy)
+    return first_safe([full, x_only, y_only], full)
+
+# story-012: pick the strafe side, holding it for a randomised interval instead
+# of a fixed 2s parity so the reversal cadence is unpredictable (anti-aim). The
+# hold length varies each flip, so there is no regular period a foe can lead.
+# Deterministic under the seeded sim RNG + fake clock, so win-rate stays stable.
+STRAFE_MIN_HOLD = 1.3   # seconds a side is held at minimum
+STRAFE_MAX_HOLD = 2.7   # seconds a side is held at most (avg ~2s, as the old fixed period)
+
+def _strafe_side():
+    now = time.time()
+    side = persistent_data.get("strafe_side")
+    flip_at = persistent_data.get("strafe_flip_at")
+    if side is None or flip_at is None or now >= flip_at:
+        # First use picks a random side; later flips just reverse the current one.
+        side = (1 if random.random() < 0.5 else -1) if side is None else -side
+        hold = STRAFE_MIN_HOLD + random.random() * (STRAFE_MAX_HOLD - STRAFE_MIN_HOLD)
+        persistent_data["strafe_side"] = side
+        persistent_data["strafe_flip_at"] = now + hold
+    return persistent_data["strafe_side"]
+
+def strafe_around(target_pos):
+    dx = target_pos[0] - player_pos[0]
+    dy = target_pos[1] - player_pos[1]
+    side = _strafe_side()
+    sx = -dy * side
+    sy = dx * side
+    full = normalize_move(sx, sy)
+    reverse = normalize_move(-sx, -sy)
+    return first_safe([full, reverse], full)
+
+# story-015: juke-retreat. A straight radial retreat keeps the player moving
+# ALONG the enemy's line of fire, so its shots land at (nearly) full accuracy —
+# useless against a rusher that out-paces us anyway (it stays in range while we
+# eat clean hits). Blending a lateral (perpendicular) component in makes the
+# retreat serpentine: we still gain ground away from the enemy, but the lateral
+# slip forces the enemy to lead its shots, cutting the fraction that connects
+# (most against slow projectiles — the exact profile of tanks/rushers like Bull).
+# The lateral sign reuses the anti-aim _strafe_side so the weave itself isn't
+# pre-aimable, and degrades to a plain retreat when no lateral option is safe.
+JUKE_LATERAL = 0.9   # weight of the perpendicular weave relative to the away vector
+
+def juke_retreat(target_pos):
+    dx = player_pos[0] - target_pos[0]           # away from the enemy
+    dy = player_pos[1] - target_pos[1]
+    length = vec_len(dx, dy)
+    if length <= 0:
+        return move_away_from(target_pos)
+    ux, uy = dx / length, dy / length            # unit "away" direction
+    side = _strafe_side()
+    px_, py_ = -uy * side, ux * side             # unit perpendicular (weave)
+    weave = normalize_move(ux + px_ * JUKE_LATERAL, uy + py_ * JUKE_LATERAL)
+    weave_rev = normalize_move(ux - px_ * JUKE_LATERAL, uy - py_ * JUKE_LATERAL)
+    straight = move_away_from(target_pos)
+    # Prefer the weaving retreat; fall back to the mirror weave, then a plain
+    # retreat, so we never freeze or walk into a wall while juking.
+    return first_safe([weave, weave_rev, straight], straight)
+
+# story-013: distance-band hysteresis. The kite archetypes (SNIPER/RANGED/LOBS)
+# choose retreat / strafe / approach by comparing enemy_distance to two band
+# edges (min_safe, ideal_far). Right at an edge, tiny frame-to-frame jitter used
+# to flip the mode every tick — twitchy, self-cancelling movement. A Schmitt-
+# trigger deadband fixes it: once in a mode we only LEAVE it when the distance
+# crosses the edge by HYST_MARGIN, so the mode is sticky near a boundary while
+# the intended bands (story-008) are otherwise unchanged. The margin is capped
+# to a quarter of the band width so the two deadbands can't overlap on brawlers
+# with a narrow band; if the band inverts (min_safe >= ideal_far) the margin is
+# 0 and it degrades to the plain thresholds.
+HYST_MARGIN = TILE_SIZE * 0.5   # ~30px deadband around each band edge
+
+def kite_band_move(enemy_coords, enemy_distance, min_safe, ideal_far):
+    m = min(HYST_MARGIN, max(0.0, (ideal_far - min_safe) * 0.25))
+    mode = persistent_data.get("kite_mode")
+    if mode == "retreat":
+        if enemy_distance > min_safe + m:
+            mode = "strafe"
+    elif mode == "approach":
+        if enemy_distance < ideal_far - m:
+            mode = "strafe"
+    elif mode == "strafe":
+        if enemy_distance < min_safe - m:
+            mode = "retreat"
+        elif enemy_distance > ideal_far + m:
+            mode = "approach"
+    else:
+        # No prior mode -> classify with the plain bands (story-008 behaviour).
+        if enemy_distance < min_safe:
+            mode = "retreat"
+        elif enemy_distance > ideal_far:
+            mode = "approach"
+        else:
+            mode = "strafe"
+    persistent_data["kite_mode"] = mode
+    if mode == "retreat":
+        # Serpentine retreat (story-015) instead of a straight radial back-off,
+        # so a faster rusher that keeps us in range can't land clean shots.
+        return juke_retreat(enemy_coords)
+    if mode == "approach":
+        return move_toward(enemy_coords)
+    return strafe_around(enemy_coords)
+
+# story-015: out-run estimate. Peak-track the enemy's and our own observed px/s
+# (position deltas share the arena's units, so they're directly comparable) and
+# report whether the enemy is clearly slower than us — i.e. we can open the gap
+# and kite it out of its range. Uses only observable geometry (no enemy-speed
+# stat, which the engine doesn't expose). Needs a short warm-up so an early
+# stationary frame can't misclassify a fast foe as slow.
+OUTRUN_SPEED_RATIO = 0.9    # enemy peak speed below this fraction of ours -> out-runnable
+OUTRUN_WARMUP = 10          # ticks of observation before the estimate is trusted
+
+def update_outrun_estimate(enemy_coords):
+    now = time.time()
+    last_t = persistent_data.get("last_speed_time")
+    last_own = persistent_data.get("last_own_pos")
+    last_enemy = persistent_data.get("last_speed_enemy_pos")
+    persistent_data["last_own_pos"] = (player_pos[0], player_pos[1])
+    persistent_data["last_speed_enemy_pos"] = (
+        (enemy_coords[0], enemy_coords[1]) if enemy_coords is not None else None
+    )
+    persistent_data["last_speed_time"] = now
+    if last_t is None or last_own is None:
+        return False
+    dt = now - last_t
+    if dt <= 0 or dt > 1.0:                       # stale / first frame -> skip sample
+        return False
+    own_speed = vec_len(player_pos[0] - last_own[0], player_pos[1] - last_own[1]) / dt
+    persistent_data["peak_own_speed"] = max(persistent_data.get("peak_own_speed", 0.0), own_speed)
+    if enemy_coords is not None and last_enemy is not None:
+        enemy_speed = vec_len(enemy_coords[0] - last_enemy[0], enemy_coords[1] - last_enemy[1]) / dt
+        persistent_data["peak_enemy_speed"] = max(
+            persistent_data.get("peak_enemy_speed", 0.0), enemy_speed
+        )
+        persistent_data["speed_samples"] = persistent_data.get("speed_samples", 0) + 1
+    peak_own = persistent_data.get("peak_own_speed", 0.0)
+    peak_enemy = persistent_data.get("peak_enemy_speed", 0.0)
+    if persistent_data.get("speed_samples", 0) < OUTRUN_WARMUP or peak_own <= 0 or peak_enemy <= 0:
+        return False
+    return peak_enemy < peak_own * OUTRUN_SPEED_RATIO
+
+def random_safe_movement():
+    options = [
+        (0, -JOYSTICK_RADIUS),
+        (0, JOYSTICK_RADIUS),
+        (-JOYSTICK_RADIUS, 0),
+        (JOYSTICK_RADIUS, 0),
+        normalize_move(JOYSTICK_RADIUS, -JOYSTICK_RADIUS),
+        normalize_move(-JOYSTICK_RADIUS, -JOYSTICK_RADIUS),
+        normalize_move(JOYSTICK_RADIUS, JOYSTICK_RADIUS),
+        normalize_move(-JOYSTICK_RADIUS, JOYSTICK_RADIUS),
+    ]
+    random.shuffle(options)
+    return first_safe(options, get_random_movement())
+
+
+# ═══════════════════════════════════════════════════════
+#  POSITIONING & COVER  (story-007)
+# ═══════════════════════════════════════════════════════
+# There is no HP signal from the engine, so "low HP / under fire" is
+# approximated by SUSTAINED pressure: how many consecutive ticks a hittable
+# enemy has sat inside attack_range. Once that builds past a threshold we treat
+# ourselves as "taking fire" and prefer cover (a wall that breaks line of sight,
+# or a bush for concealment) over the plain archetype move.
+THREAT_TICKS_FOR_COVER = 3   # sustained pressure this many ticks -> seek cover
+THREAT_TICK_MAX = 6          # cap so the counter can't run away
+
+# Objective proxy: the arena centre. With no explicit objective marker exposed,
+# contesting the middle is the safe-when-clear default (criterion 3).
+MAP_CENTER = (width / 2.0, height / 2.0)
+
+def update_pressure(enemy_coords, enemy_distance):
+    """Advance the HP-free 'under fire' proxy. Ticks up while a hittable enemy is
+    inside attack_range, decays otherwise, and clamps to [0, THREAT_TICK_MAX].
+    Returns True once pressure has built past THREAT_TICKS_FOR_COVER."""
+    ticks = persistent_data.get("threat_ticks", 0)
+    threatened = (
+        enemy_coords is not None
+        and enemy_distance is not None
+        and enemy_distance <= attack_range
+        and is_enemy_hittable(player_pos, enemy_coords, walls, "attack")
+    )
+    if threatened:
+        ticks = min(THREAT_TICK_MAX, ticks + 1)
+    else:
+        ticks = max(0, ticks - 1)
+    persistent_data["threat_ticks"] = ticks
+    return ticks >= THREAT_TICKS_FOR_COVER
+
+def seek_cover(enemy_coords):
+    """Under sustained fire, prefer a step that reaches cover: to a spot where a
+    wall breaks the enemy's line of sight, or into a bush for concealment. Bush
+    entry is normally avoided under threat (ambush risk, story-002); here
+    breaking contact outweighs that. Returns a cover move, or None when no cover
+    is reachable this tick — the caller then keeps its archetype move, so the
+    sim (no walls/bushes, LOS always clear) is left unchanged and win-rate holds."""
+    if enemy_coords is None:
+        return None
+    dx = player_pos[0] - enemy_coords[0]
+    dy = player_pos[1] - enemy_coords[1]
+    candidates = [
+        normalize_move(dx, dy),          # straight back, away from the shooter
+        normalize_move(dx, 0),
+        normalize_move(0, dy),
+        strafe_around(enemy_coords),
+        normalize_move(-dx, dy),         # lateral options widen the cover search
+        normalize_move(dx, -dy),
+    ]
+    best, best_score = None, 0
+    for mv in candidates:
+        if (mv[0] == 0 and mv[1] == 0) or is_blocked(mv):
+            continue
+        new_pos = (player_pos[0] + mv[0], player_pos[1] + mv[1])
+        score = 0
+        if not is_enemy_hittable(new_pos, enemy_coords, walls, "attack"):
+            score += 2                   # wall cover: the enemy loses the shot
+        if move_lands_in_bush(mv):
+            score += 1                   # bush cover: concealment
+        if score > best_score:
+            best, best_score = mv, score
+    return best                          # None unless real cover was found
+
+def objective_movement():
+    """No-enemy behaviour (criteria 2 & 3): follow a nearby teammate, else push
+    toward the arena centre on a slightly serpentine path so we're neither idle
+    nor a straight, predictable line for enemies to pre-aim. Always yields a
+    valid safe vector (never freezes)."""
+    closest_teammate_coords, teammate_distance = find_closest_teammate(
+        teammate_data, player_pos, walls
+    )
+    if closest_teammate_coords is not None:
+        if teammate_distance is None or teammate_distance > TILE_SIZE * 3:
+            return move_toward(closest_teammate_coords)
+
+    cx, cy = MAP_CENTER
+    dcx, dcy = cx - player_pos[0], cy - player_pos[1]
+    if vec_len(dcx, dcy) > TILE_SIZE * 2:
+        # Blend a perpendicular wander whose sign flips over time -> serpentine
+        # approach to the centre, not a dead-straight (predictable) march.
+        side = 1 if int(time.time() / 1.5) % 2 == 0 else -1
+        wx, wy = -dcy * side, dcx * side
+        blended = normalize_move(dcx + wx * 0.4, dcy + wy * 0.4)
+        toward = move_toward(MAP_CENTER)
+        return first_safe([blended, toward], toward)
+
+    # Already holding the centre: keep repositioning instead of standing still.
+    return random_safe_movement()
+
+def peek_for_shot(target_coords):
+    """Wall-peek for ranged brawlers: when a target is in attack_range but a wall
+    blocks the shot, step to a lateral (or slightly forward) spot that opens line
+    of sight, so we peek-and-fire from cover instead of standing blind. Searches
+    perpendicular strafes first, returns the first move that gains LOS and isn't
+    wall-blocked, else None. With no walls / clear LOS (e.g. the sim) it returns
+    None immediately, so it can never move win-rate."""
+    if target_coords is None or not walls:
+        return None
+    dx = target_coords[0] - player_pos[0]
+    dy = target_coords[1] - player_pos[1]
+    perp_x, perp_y = -dy, dx                      # perpendicular to the sightline
+    candidates = [
+        normalize_move(perp_x, perp_y),
+        normalize_move(-perp_x, -perp_y),
+        normalize_move(perp_x + dx * 0.3, perp_y + dy * 0.3),
+        normalize_move(-perp_x + dx * 0.3, -perp_y + dy * 0.3),
+    ]
+    for mv in candidates:
+        if (mv[0] == 0 and mv[1] == 0) or is_blocked(mv):
+            continue
+        new_pos = (player_pos[0] + mv[0], player_pos[1] + mv[1])
+        if is_enemy_hittable(new_pos, target_coords, walls, "attack"):
+            return mv
+    return None
+
+
+# ═══════════════════════════════════════════════════════
+#  ARCHETYPE DETECTION
+# ═══════════════════════════════════════════════════════
+
+def detect_archetype():
+    ar = _as_float(get_stat("attack_range", attack_range), attack_range or 400.0)
+    sr = _as_float(get_stat("safe_range", safe_range), safe_range or 200.0)
+    wall_ignore = bool(get_stat("ignore_walls_for_attacks", False))
+
+    if wall_ignore:
+        return "LOBS"
+    if ar <= 256:
+        return "ASSASSIN"
+    if sr <= 0.0 and ar <= 350:
+        return "TANK"
+    if ar >= 600:
+        return "SNIPER"
+    return "RANGED"
+
+archetype = detect_archetype()
+
+# Wider shots want a touch more spacing so the projectile can cover the lane;
+# body-contact distance below which we peel out instead of shoving deeper in.
+collision_dist = max(TILE_SIZE, attack_width * 0.5)
+
+
+# ═══════════════════════════════════════════════════════
+#  ATTACK HELPERS
+# ═══════════════════════════════════════════════════════
+
+def regen_ammo():
+    """Advance the virtual magazine by the elapsed time and return the current
+    round count. No-op (always full) for brawlers without reload data."""
+    if not has_reload_data:
+        return float(max_ammo)
+    now = time.time()
+    ammo = persistent_data.get("ammo")
+    last = persistent_data.get("last_ammo_time")
+    if ammo is None or last is None:
+        persistent_data["ammo"] = float(max_ammo)
+        persistent_data["last_ammo_time"] = now
+        return float(max_ammo)
+    dt = now - last
+    if dt > 0:
+        ammo = min(float(max_ammo), ammo + dt / reload_speed)
+        persistent_data["ammo"] = ammo
+        persistent_data["last_ammo_time"] = now
+    return ammo
+
+def _consume_ammo():
+    if not has_reload_data:
+        return
+    persistent_data["ammo"] = max(0.0, persistent_data.get("ammo", max_ammo) - 1.0)
+
+def shot_is_marginal(coords, distance):
+    """A low-value poke: a lone target (not lining up others) sitting near the
+    fringe of our range. Worth holding when the magazine is nearly dry so the
+    reserve is kept for a reliable shot. A reliably-hittable, in-range target is
+    never marginal, so sustained combat (and the sim) fires unthrottled."""
+    if coords is None or distance is None:
+        return False
+    aligned = count_aligned(coords, _enemy_centers(), attack_width)
+    return aligned < 2 and distance > attack_range * 0.9
+
+def count_threats(radius):
+    """How many enemies sit within `radius` of the player (1vN awareness)."""
+    return sum(1 for c in _enemy_centers() if get_distance(c, player_pos) <= radius)
+
+def has_support():
+    """Is a teammate close enough to back us up in a fight?"""
+    coords, dist = find_closest_teammate(teammate_data, player_pos, walls)
+    return coords is not None and dist is not None and dist <= SUPPORT_RADIUS
+
+def do_attack():
+    if not must_hold:
+        attack()
+        return
+
+    hold_attack_time = _as_float(get_stat("hold_attack", 0.0), 0.0)
+
+    if persistent_data["time_since_holding_attack"] is None:
+        persistent_data["time_since_holding_attack"] = time.time()
+        attack(touch_up=False, touch_down=True)
+
+    elif time.time() - persistent_data["time_since_holding_attack"] >= hold_attack_time:
+        attack(touch_up=True, touch_down=False)
+        persistent_data["time_since_holding_attack"] = None
+
+# Super-usage tuning (story-005). The engine exposes no enemy HP, so
+# "already-dying / low-value" can't be read directly — we approximate value by
+# how many enemies the super lane covers and how reliably a lone target can be
+# hit, rather than firing on any single enemy in range.
+SUPER_MULTI_TARGET = 2      # this many aligned enemies always justifies a super
+SUPER_EDGE_FRAC = 0.95      # a lone damage target past this fraction of
+                            # super_range is a marginal, low-value shot -> hold
+SUPER_REFIRE_GAP = 0.5      # seconds; don't re-issue use_super every tick
+
+def choose_super_target(centers):
+    """Pick the super aim that lines up the most enemies inside super_range and
+    (unless the super pierces walls) has line of sight for the super. Ties break
+    toward the closer target. Returns (coords, distance, aligned) or
+    (None, None, 0) when nothing is a valid super target."""
+    best, best_score, best_dist = None, -1, None
+    for c in centers:
+        d = get_distance(c, player_pos)
+        if d > super_range:                                   # criterion 1: in super_range only
+            continue
+        if not super_ignores_walls and not is_enemy_hittable(player_pos, c, walls, "super"):
+            continue
+        score = count_aligned(c, centers, super_width)        # criterion 2: most/aligned targets
+        if score > best_score or (score == best_score and (best_dist is None or d < best_dist)):
+            best, best_score, best_dist = c, score, d
+    if best is None:
+        return None, None, 0
+    return best, best_dist, best_score
+
+def super_is_worth_it(distance, aligned, super_type):
+    """Whether spending the super now is high enough value (criterion 3: don't
+    waste it on low-value targets). Multiple aligned enemies is always worth it;
+    spawn/charge/other supers keep value from positioning or mobility even on a
+    single target; a lone *damage* super must be a reliable (not fringe-of-range)
+    hit rather than a marginal, wasted shot."""
+    if aligned >= SUPER_MULTI_TARGET:
+        return True
+    if super_type in ("spawnable", "charge", "other"):
+        return True
+    # A short-range burst super on a long-range brawler (super_range <
+    # attack_range, e.g. Pierce) required diving in to land (story-014): once the
+    # target is inside super_range, the hit is the payoff we maneuvered for, not a
+    # wasted fringe poke — so fire anywhere in super_range. For brawlers whose
+    # super reaches as far as their attack, keep the edge guard so a lone
+    # fringe-of-range target isn't a wasted shot.
+    edge = 1.0 if super_range < attack_range else SUPER_EDGE_FRAC
+    return distance <= super_range * edge
+
+def want_super_dive(coords, distance):
+    """Super-setup dive (story-014). A short-range burst super on a long-range
+    brawler (super_range < attack_range — e.g. Pierce's piercing super at ~315
+    vs a ~614 attack) only connects from inside super_range, but the kite band
+    holds the enemy beyond it, so a charged super is wasted. When the super is
+    charged and a hittable enemy sits inside attack_range yet just outside
+    super_range, close the gap to bring it into super_range; once inside,
+    try_use_super fires and normal kiting resumes. No-op when the super out-
+    reaches our attack (super_range >= attack_range), isn't charged, or the
+    target is already within super_range — so short-range brawlers and matchups
+    where the super already lands are unaffected."""
+    if not is_super_ready or super_range >= attack_range:
+        return False
+    if coords is None or distance is None:
+        return False
+    if distance <= super_range or distance > attack_range:
+        return False
+    return is_enemy_hittable(player_pos, coords, walls, "attack")
+
+def try_use_super(enemy_coords, enemy_distance):
+    # Criterion 1: only when the super is actually charged.
+    if not is_super_ready:
+        return
+    if persistent_data["time_since_holding_attack"] is not None:
+        return
+    # Don't spam the super button while it keeps reading ready across ticks.
+    if time.time() - persistent_data["last_super_use"] < SUPER_REFIRE_GAP:
+        return
+
+    centers = _enemy_centers()
+    if not centers:
+        return
+
+    super_type = get_stat("super_type", "damage")
+    target, target_dist, aligned = choose_super_target(centers)
+    # No enemy both inside super_range and hittable -> hold fire (don't waste).
+    if target is None:
+        return
+    if not super_is_worth_it(target_dist, aligned, super_type):
+        return
+
+    if is_hypercharge_ready:
+        use_hypercharge()
+    use_super()
+    persistent_data["last_super_use"] = time.time()
+
+def should_use_gadget(enemy_coords, enemy_distance):
+    """Defined trigger for the gadget (story-006). The engine exposes no HP, so
+    a 'good moment' is approximated geometrically: either a multi-enemy burst
+    (>=2 foes lined up in the attack lane) or a reliable, committed hit (the
+    target well inside attack_range, not at the fringe). A lone fringe-of-range
+    poke returns False so a limited-charge gadget isn't spent on a low-value
+    shot — mirroring the super's waste-avoidance."""
+    if enemy_coords is None or enemy_distance is None:
+        return False
+    aligned = count_aligned(enemy_coords, _enemy_centers(), attack_width)
+    if aligned >= 2:
+        return True
+    return enemy_distance <= attack_range * 0.6
+
+def try_use_gadget(enemy_coords, enemy_distance):
+    """Fire the gadget only in a defined trigger situation, when the engine
+    reports it ready, within the per-match charge budget, off cooldown, and not
+    mid hold-attack. Degrades safely for brawlers with no gadget data: has_gadget
+    defaults on, but is_gadget_ready (the engine's live gate) still governs, and
+    the charge cap keeps it bounded — no error path when data is absent."""
+    if not has_gadget or not is_gadget_ready:
+        return
+    if persistent_data["time_since_holding_attack"] is not None:
+        return
+    if persistent_data["gadget_uses"] >= gadget_charges:   # per-match limit
+        return
+    # First use (None) is free; later uses wait a short reuse gap so the charge
+    # budget is spent across the match instead of stranded behind one long cooldown.
+    last_g = persistent_data["last_gadget_use"]
+    if last_g is not None and time.time() - last_g <= gadget_reuse_gap:
+        return
+    if not should_use_gadget(enemy_coords, enemy_distance):
+        return
+    use_gadget()
+    persistent_data["last_gadget_use"] = time.time()
+    persistent_data["gadget_uses"] += 1
+
+def try_attack(enemy_coords, enemy_distance, allow_wall_attack=False):
+    if enemy_coords is None or enemy_distance is None:
+        return False
+    if enemy_distance > attack_range:
+        return False
+
+    enemy_hittable = is_enemy_hittable(player_pos, enemy_coords, walls, "attack")
+
+    if enemy_hittable or allow_wall_attack:
+        # Ammo/reload pacing: when the virtual magazine is nearly dry, hold a
+        # marginal fringe poke so a round is kept for a reliable shot. Reliable /
+        # in-range / multi-target shots always fire, so this never throttles a
+        # real engagement (or the sim, where the target is always reliable).
+        if has_reload_data and regen_ammo() < 1.0 and shot_is_marginal(enemy_coords, enemy_distance):
+            return False
+        try_use_gadget(enemy_coords, enemy_distance)
+        do_attack()
+        _consume_ammo()
+        return True
+
+    return False
+
+
+# ═══════════════════════════════════════════════════════
+#  TARGETING  (story-004: what & where to shoot)
+# ═══════════════════════════════════════════════════════
+
+def _enemy_centers():
+    # Bounding boxes -> centre points, skipping malformed entries.
+    centers = []
+    for e in enemy_data:
+        if isinstance(e, (list, tuple)) and len(e) >= 4:
+            centers.append(get_entity_pos(e))
+    return centers
+
+def count_aligned(aim_pos, centers, width):
+    """How many enemies fall inside a lane of `width` running from the player
+    toward `aim_pos` — the wider the shot, the more foes a single line hits.
+    A simple projected-corridor test, so wall geometry is ignored here (line of
+    sight is checked separately via is_enemy_hittable)."""
+    ax = aim_pos[0] - player_pos[0]
+    ay = aim_pos[1] - player_pos[1]
+    length = vec_len(ax, ay)
+    if length <= 0:
+        return 0
+    ux, uy = ax / length, ay / length          # unit vector along the shot
+    half = max(width, TILE_SIZE) * 0.5
+    hits = 0
+    for c in centers:
+        cx = c[0] - player_pos[0]
+        cy = c[1] - player_pos[1]
+        along = cx * ux + cy * uy              # distance down the lane
+        if along < 0 or along > length + half:
+            continue
+        perp = abs(cx * -uy + cy * ux)         # offset from the lane axis
+        if perp <= half:
+            hits += 1
+    return hits
+
+def choose_target(default_coords, default_distance):
+    """Pick the aim target that lines up the most enemies within attack_range,
+    using attack_width as the lane width; ties break toward the closer target.
+    Only considers enemies that are in range AND have line of sight, so a
+    returned target is always a valid one to fire at. Falls back to the closest
+    enemy (movement still approaches it) when nothing is currently shootable."""
+    centers = _enemy_centers()
+    if not centers:
+        return default_coords, default_distance
+    best, best_score, best_dist = None, -1, None
+    for c in centers:
+        d = get_distance(c, player_pos)
+        if d > attack_range:
+            continue
+        if not is_enemy_hittable(player_pos, c, walls, "attack"):
+            continue
+        score = count_aligned(c, centers, attack_width)
+        if score > best_score or (score == best_score and (best_dist is None or d < best_dist)):
+            best, best_score, best_dist = c, score, d
+    if best is None:
+        return default_coords, default_distance
+    return best, best_dist
+
+def _estimate_enemy_velocity(coords):
+    """Rough per-second velocity of the tracked target from frame deltas.
+    Returns (0, 0) when there's no usable history (first sighting / stale)."""
+    prev = persistent_data.get("last_enemy_pos")
+    prev_t = persistent_data.get("last_enemy_time")
+    now = time.time()
+    persistent_data["last_enemy_pos"] = (coords[0], coords[1])
+    persistent_data["last_enemy_time"] = now
+    if prev is None or prev_t is None:
+        return (0.0, 0.0)
+    dt = now - prev_t
+    if dt <= 0 or dt > 1.0:                     # same frame or too stale to trust
+        return (0.0, 0.0)
+    return ((coords[0] - prev[0]) / dt, (coords[1] - prev[1]) / dt)
+
+def lead_target(coords, distance):
+    """Offset the aim point to where a moving target will be when the shot
+    lands. Needs projectile-speed data (else there's no travel time to lead by),
+    so degrades to the current position when that data is absent."""
+    if coords is None or distance is None or distance <= 0 or projectile_speed <= 0:
+        return coords
+    vx, vy = _estimate_enemy_velocity(coords)
+    if vx == 0 and vy == 0:
+        return coords
+    travel = min(distance / projectile_speed, 0.5)   # cap so edge cases stay sane
+    lx = coords[0] + vx * travel
+    ly = coords[1] + vy * travel
+    # Clamp the lead so a bad velocity estimate can't fling the aim off-target.
+    max_lead = max(TILE_SIZE, attack_width)
+    ox, oy = lx - coords[0], ly - coords[1]
+    off = vec_len(ox, oy)
+    if off > max_lead:
+        scale = max_lead / off
+        lx, ly = coords[0] + ox * scale, coords[1] + oy * scale
+    return (lx, ly)
+
+
+# ═══════════════════════════════════════════════════════
+#  HOLD ATTACK AUTO-RELEASE
+# ═══════════════════════════════════════════════════════
+
+if must_hold and persistent_data["time_since_holding_attack"] is not None:
+    hold_limit = _as_float(get_stat("hold_attack", 0.0), 0.0) + seconds_to_hold_attack_after_reaching_max
+    if time.time() - persistent_data["time_since_holding_attack"] >= hold_limit:
+        attack(touch_up=True, touch_down=False)
+        persistent_data["time_since_holding_attack"] = None
+
+
+# ═══════════════════════════════════════════════════════
+#  POISON GAS
+# ═══════════════════════════════════════════════════════
+
+def avoid_poison_gas():
+    # is_there_poison_gas requires (player_data, threshold, area_from_player_checked)
+    # per skeleton.py. Check a few tiles around the player at a 40% coverage threshold.
+    poison_gas = is_there_poison_gas(player_data, 0.4, 3)
+    if not isinstance(poison_gas, dict):
+        return None
+
+    up = poison_gas.get("up", 0)
+    down = poison_gas.get("down", 0)
+    left = poison_gas.get("left", 0)
+    right = poison_gas.get("right", 0)
+
+    x = 0
+    y = 0
+
+    if up or down:
+        # Move toward the side with LESS gas.
+        y = JOYSTICK_RADIUS if up > down else -JOYSTICK_RADIUS
+
+    if left or right:
+        x = JOYSTICK_RADIUS if left > right else -JOYSTICK_RADIUS
+
+    if x == 0 and y == 0:
+        return None
+
+    move = normalize_move(x, y)
+    return first_unblocked([move, (x, 0), (0, y)], move)
+
+
+# ═══════════════════════════════════════════════════════
+#  NO ENEMY / EXPLORATION
+# ═══════════════════════════════════════════════════════
+
+def no_enemy_movement():
+    # story-007: contest the objective/centre with a non-predictable path
+    # instead of idling or marching straight forward.
+    return objective_movement()
+
+
+# ═══════════════════════════════════════════════════════
+#  MAIN BEHAVIOR TREE
+# ═══════════════════════════════════════════════════════
+
+enemy_coords = None
+enemy_distance = None
+
+# 1. Detectar ameaças e alvos
+aim_coords = None
+aim_distance = None
+fire_coords = None
+
+if is_there_enemy(enemy_data):
+    enemy_coords, enemy_distance = find_closest_enemy(
+        enemy_data, player_pos, walls, "attack"
+    )
+    # Movement still tracks the closest enemy (enemy_coords); firing aims at the
+    # best-aligned in-range/visible target (attack_width), led for its motion.
+    aim_coords, aim_distance = choose_target(enemy_coords, enemy_distance)
+    fire_coords = lead_target(aim_coords, aim_distance)
+
+# story-007: track sustained enemy pressure every tick (decays when no enemy) as
+# the HP-free "under fire" proxy that drives cover-seeking below.
+under_pressure = update_pressure(enemy_coords, enemy_distance)
+
+# story-015: track whether we out-pace the enemy (can kite it out of its range).
+# Updated every tick so the peak-speed estimate keeps improving through the match.
+can_outrun = update_outrun_estimate(enemy_coords)
+
+anti_gas_movement = avoid_poison_gas()
+
+# 2. Reação de Fuga do Gás
+if anti_gas_movement is not None:
+    movement = anti_gas_movement
+
+    # Continua atirando mesmo fugindo do gás se houver inimigos
+    if enemy_coords is not None:
+        try_use_super(enemy_coords, enemy_distance)
+        if archetype == "LOBS":
+            try_attack(fire_coords, aim_distance, allow_wall_attack=True)
+        else:
+            try_attack(fire_coords, aim_distance)
+
+# 3. Árvore de Combate Padrão
+else:
+    if enemy_coords is None:
+        movement = no_enemy_movement()
+    else:
+        try_use_super(enemy_coords, enemy_distance)
+
+        # Ataca SEMPRE que estiver em alcance e com visão, independente do movimento.
+        # fire_coords/aim_distance already encode "only a valid in-range, visible
+        # target" — if none exists, try_attack holds fire (no position exposure).
+        if archetype == "LOBS":
+            fired = try_attack(fire_coords, aim_distance, allow_wall_attack=True)
+        else:
+            fired = try_attack(fire_coords, aim_distance)
+
+        # 1vN awareness: are we facing more enemies than we can trade with, and
+        # with no teammate to back us up? Only meaningful with 2+ enemies, so the
+        # 1v1 sim leaves this False and unchanged.
+        outnumbered = count_threats(THREAT_COUNT_RADIUS) >= 2 and not has_support()
+
+        # ═══════════════════════════════════════════════
+        #  MOVIMENTAÇÃO POR ARQUÉTIPO (Sem travar ataque)
+        # ═══════════════════════════════════════════════
+        if archetype == "ASSASSIN":
+            if enemy_distance <= collision_dist:
+                movement = first_safe(
+                    [strafe_around(enemy_coords), move_away_from(enemy_coords), random_safe_movement()],
+                    strafe_around(enemy_coords),
+                )
+            elif enemy_distance > attack_range * 0.40:
+                movement = move_toward(enemy_coords)
+            else:
+                movement = strafe_around(enemy_coords)
+
+        elif archetype == "TANK":
+            if enemy_distance <= collision_dist:
+                movement = first_safe(
+                    [strafe_around(enemy_coords), move_away_from(enemy_coords), random_safe_movement()],
+                    strafe_around(enemy_coords),
+                )
+            elif enemy_distance > attack_range * 0.25:
+                movement = move_toward(enemy_coords)
+            else:
+                movement = strafe_around(enemy_coords)
+
+        elif archetype == "SNIPER":
+            # Kite band: keep the enemy beyond their likely threat reach (our
+            # safe_range, or ~55% of our range as a proxy) yet inside our
+            # attack_range, so we deal damage without eating it. Faster brawlers
+            # (mobility) hold a wider gap; capped at 0.9*range so we never kite
+            # ourselves out of our own shot. mobility only *widens* the gap
+            # (max(1.0, .)), so slow brawlers still keep the enemy at bay instead
+            # of letting them close in.
+            min_safe = min(max(safe_range, attack_range * 0.55) * max(1.0, mobility),
+                           attack_range * 0.9)
+            ideal_far = attack_range * 0.85
+            # story-015: against a foe we clearly out-pace AND with a short-range
+            # burst super (super_range < attack_range, e.g. Pierce's piercing
+            # super), don't over-kite it past super reach. A slow tanky sniper has
+            # so much HP that the damage race times out unless every charged super
+            # lands; kiting it to the far edge strands the super (its dive can't
+            # close in time). So hold it just inside super_range: our reach still
+            # keeps us safer than it, and both supers connect. Only bites for a
+            # confirmed-slower enemy (can_outrun) with a short super, so the normal
+            # roster and equal/faster matchups keep the tuned band unchanged.
+            if can_outrun and super_range < attack_range:
+                min_safe = min(min_safe, super_range * 0.7)
+                ideal_far = super_range
+            # Hysteresis (story-013) damps mode dithering at the band edges.
+            movement = kite_band_move(enemy_coords, enemy_distance, min_safe, ideal_far)
+
+        elif archetype == "LOBS":
+            min_safe = attack_range * 0.45
+            ideal_far = attack_range * 0.55
+            movement = kite_band_move(enemy_coords, enemy_distance, min_safe, ideal_far)
+
+        else: # RANGED
+            # Same kite principle as SNIPER but at a tighter band (shorter range),
+            # keeping the enemy out of their likely reach while staying in ours.
+            min_safe = min(max(safe_range * 0.9, attack_range * 0.45) * max(1.0, mobility),
+                           attack_range * 0.85)
+            ideal_far = attack_range * 0.70
+            movement = kite_band_move(enemy_coords, enemy_distance, min_safe, ideal_far)
+
+        # Super-setup dive (story-014): with the super charged but our kite band
+        # holding the enemy beyond a short-range burst super's reach, close in to
+        # land it. Overrides the kite move; a no-op unless super_range <
+        # attack_range and the target sits just outside super_range (so it never
+        # touches short-range brawlers or the tank matchup, where the super
+        # already connects). The 1vN peel-back below can still override this so we
+        # never dive into a group.
+        if want_super_dive(enemy_coords, enemy_distance):
+            movement = move_toward(enemy_coords)
+
+        # 1vN: when outnumbered and unsupported, don't shove deeper into the group
+        # — peel back and hold spacing (still firing, done above) instead of the
+        # archetype's default push. Only bites when the enemy is close enough to be
+        # dangerous; single-enemy fights (and the sim) skip this entirely.
+        if outnumbered and enemy_distance is not None and enemy_distance < attack_range * 0.8:
+            movement = first_safe(
+                [move_away_from(enemy_coords), strafe_around(enemy_coords), movement],
+                movement,
+            )
+
+        # Tratamento contra paredes / bushes perigosos quando em combate
+        if is_unsafe(movement):
+            if enemy_distance < safe_range:
+                movement = first_safe(
+                    [move_away_from(enemy_coords), strafe_around(enemy_coords), random_safe_movement()], movement
+                )
+            else:
+                movement = first_safe(
+                    [move_toward(enemy_coords), strafe_around(enemy_coords), random_safe_movement()], movement
+                )
+
+        # Wall-peek: if a ranged brawler has a target in range but couldn't fire
+        # (wall blocking LOS) and isn't under sustained fire, step to a spot that
+        # opens the shot instead of standing blind. No walls / clear LOS (the sim)
+        # -> peek_for_shot returns None, so movement and win-rate are untouched.
+        if (not fired and not under_pressure and enemy_distance is not None
+                and enemy_distance <= attack_range
+                and archetype in ("SNIPER", "RANGED", "LOBS")):
+            peek_move = peek_for_shot(aim_coords if aim_coords is not None else enemy_coords)
+            if peek_move is not None:
+                movement = peek_move
+
+        # story-007: under sustained fire, prefer cover (wall LOS-break or bush
+        # concealment) over the raw archetype move. Firing already happened above,
+        # so seeking cover doesn't cost the shot. seek_cover returns None when no
+        # cover is reachable (e.g. open ground / the sim), leaving movement as-is.
+        if under_pressure:
+            cover_move = seek_cover(enemy_coords)
+            # Deliberately gate on walls only (is_blocked), NOT is_unsafe: a bush
+            # is *desirable* cover when we're taking fire, so we override the
+            # normal under-threat bush avoidance (story-002) here.
+            if cover_move is not None and not is_blocked(cover_move):
+                movement = cover_move
+
+
+# ═══════════════════════════════════════════════════════
+#  FINAL SAFETY
+# ═══════════════════════════════════════════════════════
+
+# Guarantee a well-formed 2-component movement before anything else.
+if not (isinstance(movement, (tuple, list)) and len(movement) == 2):
+    movement = (0, 0)
+
+# Last-resort safety: if the chosen move walks into a wall or a threatened
+# bush, swap to a scanned safe direction. random_safe_movement() always
+# returns *some* joystick vector (via get_random_movement fallback), so the
+# bot keeps moving instead of freezing even when no perfect option exists.
+if is_unsafe(movement):
+    movement = random_safe_movement()
+
+# Keep each axis within the joystick bounds (-75..75).
+movement = clamp_move(movement)

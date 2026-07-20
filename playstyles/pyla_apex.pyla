@@ -36,6 +36,10 @@ must_hold = must_brawler_hold_attack(_name, brawlers_info)
 gmode = GADGET_MODE.get(_name, DEFAULT_GADGET_MODE)
 safe_range, attack_range, super_range = get_brawler_range(_name)
 player_pos = get_entity_pos(player_data)
+range_tiles = attack_range / TILE_SIZE
+is_melee = range_tiles <= 5.0
+is_ranged = range_tiles > 8.3
+is_thrower = can_attack_through_walls("attack")
 movement = (0, 0)
 _zone = "none"
 _acts = []
@@ -51,9 +55,8 @@ def first_open(cands, fallback):
     return fallback
 
 def toward(px, py):
-    dx = px - player_pos[0]
-    dy = py - player_pos[1]
-    return first_open([(dx, dy), (dx, 0), (0, dy)], (dx, dy))
+    path = find_path(player_pos, (px, py), walls)
+    return path[0] if path else (0, 0)
 
 def away(px, py):
     dx = player_pos[0] - px
@@ -235,14 +238,17 @@ if enemy_coords is None:
         movement, _zone = wander()
     
     last_enemy = persistent_data.get("last_vanished_enemy")
-    if last_enemy and time.time() - last_enemy["t"] < 2.5:
+    prefire_limit = 0.5 if is_melee else 2.5
+    if last_enemy and time.time() - last_enemy["t"] < prefire_limit:
         blind_pos = last_enemy["pos"]
         blind_dist = get_distance(player_pos, blind_pos)
-        is_thrower = can_attack_through_walls("attack")
         if blind_dist <= attack_range and is_enemy_hittable(player_pos, blind_pos, walls, "attack"):
             if persistent_data.get("time_since_holding_attack") is None:
                 if is_thrower:
-                    attack(aim=blind_pos, distance_ratio=min(1.0, max(0.1, blind_dist / attack_range)))
+                    bdx = blind_pos[0] - player_pos[0]
+                    bdy = blind_pos[1] - player_pos[1]
+                    b_game_dist = math.hypot(bdx, bdy / 0.85)
+                    attack(aim=blind_pos, distance_ratio=min(1.0, max(0.1, b_game_dist / attack_range)))
                 else:
                     attack(aim=blind_pos)
                 _acts.append("atk-blind")
@@ -263,21 +269,31 @@ else:
     else:
         is_out_of_ammo = ammo_pct < 0.33
     is_defensive = hp_pct < CFG.get("def_hp", 0.40) or is_out_of_ammo
-    is_thrower = can_attack_through_walls("attack")
-    # attack_range and TILE_SIZE are both scale_factor-multiplied, so their
-    # ratio is resolution-independent (raw px thresholds like ">450" are not)
-    range_tiles = attack_range / TILE_SIZE
-    is_ranged = range_tiles > 8.3
-    is_melee = range_tiles <= 5.0
+    mate_pushing = False
+    if teammate_data and enemy_coords:
+        for m in teammate_data:
+            m_pos = get_entity_pos(m)
+            m_dist_to_enemy = get_distance(m_pos, enemy_coords)
+            if m_dist_to_enemy <= TILE_SIZE * 6.0:
+                mate_pushing = True
+                break
 
-    if is_ranged:
-        panic = attack_range * 0.85
+    in_bush = any(b[0] <= player_pos[0] <= b[2] and b[1] <= player_pos[1] <= b[3] for b in bushes)
+    melee_commit = is_melee and enemy_dist is not None and enemy_dist <= TILE_SIZE * 3.0 and not in_bush
+
+    if is_melee and (mate_pushing or melee_commit):
+        is_defensive = False
+        panic = 0
+        _acts.append("melee-push" if mate_pushing else "melee-commit")
     else:
-        panic = safe_range * CFG["kite_mult"]
-        if range_tiles > 9.3:
-            panic = max(panic, attack_range * 0.8)
-    if is_defensive:
-        panic = max(panic, attack_range * 1.0)
+        if is_ranged:
+            panic = attack_range * 0.85
+        else:
+            panic = safe_range * CFG["kite_mult"]
+            if range_tiles > 9.3:
+                panic = max(panic, attack_range * 0.8)
+        if is_defensive:
+            panic = max(panic, attack_range * 1.0)
 
     if is_ranged:
         ideal = attack_range * 0.90
@@ -373,7 +389,12 @@ else:
                     use_hypercharge()
                     _acts.append("hyper")
                 if can_attack_through_walls("super"):
-                    ratio = min(1.0, max(0.1, led_dist / super_range))
+                    # 14 brawlers (leon, max, angelo, rt, ...) have super_range
+                    # 0 in brawlers_info - guard the division and aim full-arm.
+                    sdx = led[0] - player_pos[0]
+                    sdy = led[1] - player_pos[1]
+                    s_game_dist = math.hypot(sdx, sdy / 0.85)
+                    ratio = min(1.0, max(0.1, s_game_dist / super_range)) if super_range > 0 else 1.0
                     if is_melee and st == "charge":
                         # gap-closer jump: the enemy keeps moving during the
                         # jump animation - land ON them, not short of them
@@ -412,7 +433,10 @@ else:
                 _acts.append("atk-auto")
             else:
                 if is_thrower:
-                    attack(aim=aim_target, distance_ratio=min(1.0, max(0.1, aim_dist / attack_range)))
+                    adx = aim_target[0] - player_pos[0]
+                    ady = aim_target[1] - player_pos[1]
+                    a_game_dist = math.hypot(adx, ady / 0.85)
+                    attack(aim=aim_target, distance_ratio=min(1.0, max(0.1, a_game_dist / attack_range)))
                 else:
                     attack(aim=aim_target)
                 _acts.append(f"atk-vec({aim_t})")
@@ -424,7 +448,28 @@ else:
             attack(touch_up=True, touch_down=False)
             persistent_data["time_since_holding_attack"] = None
             _acts.append("hold-")
+# Teammate hiding logic
+mates_hiding = False
+if teammate_data and bushes:
+    all_mates_in_bush = True
+    for m in teammate_data:
+        m_pos = get_entity_pos(m)
+        m_in_bush = any(b[0] <= m_pos[0] <= b[2] and b[1] <= m_pos[1] <= b[3] for b in bushes)
+        if not m_in_bush:
+            all_mates_in_bush = False
+            break
+    if all_mates_in_bush:
+        mates_hiding = True
 
+if mates_hiding and not gas:
+    player_in_bush = any(b[0] <= player_pos[0] <= b[2] and b[1] <= player_pos[1] <= b[3] for b in bushes)
+    if player_in_bush:
+        movement = (0, 0)
+        _zone = "hide_bush"
+    else:
+        closest_bush = min((get_entity_pos(b) for b in bushes), key=lambda c: get_distance(c, player_pos))
+        movement = toward(closest_bush[0], closest_bush[1])
+        _zone = "go_hide_bush"
 
 # final safety (the engine also applies its own unstuck rotation on top of this)
 if movement is None:

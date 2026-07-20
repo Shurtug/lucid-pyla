@@ -346,6 +346,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                                     auto_entry = self.Stage_manager.brawlers_pick_data[0].copy()
                                     auto_entry["brawler"] = "auto"
                                     self.Stage_manager.brawlers_pick_data.insert(1, auto_entry)
+                                save_brawler_data(self.Stage_manager.brawlers_pick_data)
                         else:
                             status = select_brawler_res
 
@@ -381,6 +382,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                                         auto_entry = self.Stage_manager.brawlers_pick_data[0].copy()
                                         auto_entry["brawler"] = "auto"
                                         self.Stage_manager.brawlers_pick_data.insert(1, auto_entry)
+                                    save_brawler_data(self.Stage_manager.brawlers_pick_data)
                             else:
                                 status = select_brawler_res
 

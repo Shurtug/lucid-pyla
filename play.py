@@ -27,6 +27,88 @@ POISON_LOW_HSV = np.array((30, 90, 221), dtype=np.uint8)
 POISON_HIGH_HSV = np.array((57, 114, 235), dtype=np.uint8)
 PLAYER_HIT_CIRCLE_RADIUS = 53
 
+class GridPathfinder:
+    def __init__(self, walls, width, height, cell_size=35):
+        self.cell_size = cell_size
+        self.cols = int(width // cell_size) + 1
+        self.rows = int(height // cell_size) + 1
+        self.blocked = set()
+        
+        # Mark cells inside walls as blocked
+        for wall in walls:
+            x1, y1, x2, y2 = wall[:4]
+            # Safety margin so player hitbox doesn't scrape or get stuck on corners
+            buffer = 20
+            c1 = max(0, int((x1 - buffer) // cell_size))
+            r1 = max(0, int((y1 - buffer) // cell_size))
+            c2 = min(self.cols - 1, int((x2 + buffer) // cell_size))
+            r2 = min(self.rows - 1, int((y2 + buffer) // cell_size))
+            for r in range(r1, r2 + 1):
+                for c in range(c1, c2 + 1):
+                    self.blocked.add((c, r))
+
+    def find_path(self, start_pos, target_pos):
+        sc = max(0, min(self.cols - 1, int(start_pos[0] // self.cell_size)))
+        sr = max(0, min(self.rows - 1, int(start_pos[1] // self.cell_size)))
+        tc = max(0, min(self.cols - 1, int(target_pos[0] // self.cell_size)))
+        tr = max(0, min(self.rows - 1, int(target_pos[1] // self.cell_size)))
+        
+        if (sc, sr) == (tc, tr):
+            return [(target_pos[0] - start_pos[0], target_pos[1] - start_pos[1])]
+            
+        # BFS search to find shortest path
+        queue = [(sc, sr)]
+        came_from = {(sc, sr): None}
+        found = False
+        
+        # Directions: 8-way movement
+        dirs = [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]
+        
+        while queue:
+            curr = queue.pop(0)
+            if curr == (tc, tr):
+                found = True
+                break
+                
+            for dc, dr in dirs:
+                nxt = (curr[0] + dc, curr[1] + dr)
+                if 0 <= nxt[0] < self.cols and 0 <= nxt[1] < self.rows:
+                    if nxt not in self.blocked and nxt not in came_from:
+                        came_from[nxt] = curr
+                        queue.append(nxt)
+                        
+        if not found:
+            # Fallback: if target cell is blocked, find the closest unblocked cell to target
+            best_cell = None
+            best_dist = float('inf')
+            for cell in came_from:
+                d = (cell[0] - tc)**2 + (cell[1] - tr)**2
+                if d < best_dist:
+                    best_dist = d
+                    best_cell = cell
+            if best_cell:
+                tc, tr = best_cell
+            else:
+                return [(target_pos[0] - start_pos[0], target_pos[1] - start_pos[1])]
+                
+        # Reconstruct path
+        curr = (tc, tr)
+        path_cells = []
+        while curr is not None:
+            path_cells.append(curr)
+            curr = came_from[curr]
+        path_cells.reverse()
+        
+        # Convert path cells to screen coordinate steps (looking 3 steps ahead to smooth movement)
+        steps = []
+        for cell in path_cells[1:4]:
+            cell_center_x = cell[0] * self.cell_size + self.cell_size / 2
+            cell_center_y = cell[1] * self.cell_size + self.cell_size / 2
+            steps.append((cell_center_x - start_pos[0], cell_center_y - start_pos[1]))
+        if not steps:
+            steps = [(target_pos[0] - start_pos[0], target_pos[1] - start_pos[1])]
+        return steps
+
 class Play:
 
     def __init__(self, main_info_model, tile_detector_model, close_tile_detector_model, window_controller, pyla_code):
@@ -127,6 +209,7 @@ class Play:
             load_toml_as_dict("cfg/general_config.toml").get("pipeline_inference"), True)
         self._detect_executor = ThreadPoolExecutor(max_workers=1) if self.pipeline_inference else None
         self._pending_detection = None  # (frame, future) awaiting processing
+        self._pending_tiles = None      # future for an in-flight tile/wall inference
 
     @staticmethod
     def get_entity_pos(entity):
@@ -147,7 +230,9 @@ class Play:
                 and self._player_screen_center is not None):
             dx = aim[0] - self._player_screen_center[0]
             dy = aim[1] - self._player_screen_center[1]
-            self.window_controller.aim_swipe("attack", dx, dy, distance_ratio=distance_ratio)
+            # Correct for tilted perspective vertical compression
+            dy_corr = dy / 0.85
+            self.window_controller.aim_swipe("attack", dx, dy_corr, distance_ratio=distance_ratio)
             return
         self.window_controller.press("attack", touch_up=touch_up, touch_down=touch_down)
 
@@ -166,7 +251,9 @@ class Play:
         if (aim is not None and self.aim_leading and self._player_screen_center is not None):
             dx = aim[0] - self._player_screen_center[0]
             dy = aim[1] - self._player_screen_center[1]
-            self.window_controller.aim_swipe("super", dx, dy, duration=0.15, distance_ratio=distance_ratio)
+            # Correct for tilted perspective vertical compression
+            dy_corr = dy / 0.85
+            self.window_controller.aim_swipe("super", dx, dy_corr, duration=0.15, distance_ratio=distance_ratio)
         else:
             self.window_controller.press("super")
         self.time_since_super_checked = time.time()
@@ -388,6 +475,10 @@ class Play:
         if self.walls_block_line_of_sight(player_pos, enemy_pos, walls):
             return False
         return True
+
+    def find_path(self, start_pos, target_pos, walls):
+        pf = GridPathfinder(walls, self.window_controller.width, self.window_controller.height)
+        return pf.find_path(start_pos, target_pos)
 
     def find_closest_enemy(self, enemy_data, player_coords, walls, skill_type):
         player_pos_x, player_pos_y = player_coords
@@ -848,6 +939,7 @@ class Play:
                 'is_there_poison_gas': self.is_there_poison_gas,
                 'is_path_blocked': self.is_path_blocked,
                 'is_enemy_hittable': self.is_enemy_hittable,
+                'find_path': self.find_path,
                 'time': time,
                 'random': random,
                 "persistent_data": self.persistent_data,
@@ -1003,7 +1095,7 @@ class Play:
 
         if geom:
             bx = int(x_center + geom["dx"] - x_min)
-            ay1 = int(y_center + geom["dy"] + geom["h"] - y_min) + 1
+            ay1 = max(0, int(y_center + geom["dy"] + geom["h"] - y_min) + 1)
             ay2 = min(hsv.shape[0], ay1 + max(6, int(20 * scale_factor)))
             ax0 = max(0, bx)
             ax1 = min(hsv.shape[1], bx + max_w)
@@ -1173,6 +1265,16 @@ class Play:
         if not hasattr(self.window_controller, "debug_view"):
             return
 
+        # The payload below is expensive to build (a second poison-gas CV pass,
+        # predict_enemy per enemy, range lookups). publish() drops it anyway
+        # when the view is disabled or fps-throttled, so bail out before doing
+        # the work, not after.
+        dv = self.window_controller.debug_view
+        if not getattr(dv, "enabled", False):
+            return
+        if time.perf_counter() - getattr(dv, "last_publish", 0.0) < getattr(dv, "publish_delay", 0.0):
+            return
+
         self.frame = frame
         advanced_visuals = bool(getattr(self.window_controller.debug_view, "advanced_visuals", False))
         debug_data = {
@@ -1248,7 +1350,26 @@ class Play:
             data = self.get_main_data(frame)
         current_time = time.time()
         state = main.get_latest_state()
-        if current_time - self.time_since_walls_checked > self.walls_treshold:
+        if self._detect_executor is not None:
+            # Tile/wall inference in the pipeline worker: running the full ONNX
+            # pass on the main thread stalled one tick in five (walls refresh
+            # every 0.2s). Walls change slowly, so consuming the result a tick
+            # or two later costs nothing.
+            if self._pending_tiles is not None and self._pending_tiles.done():
+                try:
+                    walls, bushes = self.process_tile_data(self._pending_tiles.result())
+                    self.last_walls_data = walls
+                    self.last_bushes_data = bushes
+                except Exception as exc:
+                    print(f"Tile detection failed: {exc}")
+                self._pending_tiles = None
+            if self._pending_tiles is None and current_time - self.time_since_walls_checked > self.walls_treshold:
+                self.time_since_walls_checked = current_time
+                self._pending_tiles = self._detect_executor.submit(
+                    self.get_tile_data, frame, data.get("player"))
+            data['wall'] = self.last_walls_data
+            data['bush'] = self.last_bushes_data
+        elif current_time - self.time_since_walls_checked > self.walls_treshold:
             tile_data = self.get_tile_data(frame, data.get("player"))
             walls, bushes = self.process_tile_data(tile_data)
             self.time_since_walls_checked = current_time
