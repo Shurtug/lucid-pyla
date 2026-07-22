@@ -1004,6 +1004,8 @@ class Play:
             return
 
         hsv = cv2.cvtColor(roi, cv2.COLOR_RGB2HSV)
+        if hsv.size == 0:
+            return
         lower_green = np.array([40, 100, 120])
         upper_green = np.array([85, 255, 255])
         mask = cv2.inRange(hsv, lower_green, upper_green)
@@ -1102,6 +1104,8 @@ class Play:
             unclipped = (ax0 == bx and ax1 == bx + max_w)
             if ay2 > ay1 and ax1 - ax0 > max_w * 0.5:
                 ammo_roi = hsv[ay1:ay2, ax0:ax1]
+                if ammo_roi.size == 0:
+                    return
                 lower_orange = np.array([4, 120, 120])
                 upper_orange = np.array([32, 255, 255])
                 mask_ammo = cv2.inRange(ammo_roi, lower_orange, upper_orange)
