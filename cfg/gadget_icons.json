@@ -1,0 +1,1372 @@
+{
+  "bolt": [
+    {
+      "name": "Rocket Laces",
+      "id": 23000245,
+      "file": "bolt_1.png",
+      "description": "Brock jumps to targeted area, knocking back nearby enemies on takeoff and landing and dealing minor damage."
+    },
+    {
+      "name": "Rocket Fuel",
+      "id": 23000316,
+      "file": "bolt_2.png",
+      "description": "Brock fires a large rocket that destroys terrain and deals damage"
+    },
+    {
+      "name": "Oil Change",
+      "id": 23001281,
+      "file": "bolt_3.png",
+      "description": "Bolt gains a x - x health shield based on his current speed."
+    },
+    {
+      "name": "Bouncy Ball",
+      "id": 23001282,
+      "file": "bolt_4.png",
+      "description": "Bolt jumps to a target location and deals area damage. Breaks environments but loses all speed when landing."
+    }
+  ],
+  "starrnova": [
+    {
+      "name": "Floaty Time",
+      "id": 23001255,
+      "file": "starrnova_1.png",
+      "description": "Starr Nova deploys an anti-gravity device, allowing teammates to float inside of the area!"
+    },
+    {
+      "name": "Shining Starr Of Friendship And Justice",
+      "id": 23001256,
+      "file": "starrnova_2.png",
+      "description": "Starr Nova fires an energy ball that damages enemies and heals teammates for . This energy ball can also be teleported to before it hits a target!"
+    }
+  ],
+  "damian": [
+    {
+      "name": "Spiritual Healing",
+      "id": 23001247,
+      "file": "damian_1.png",
+      "description": "Damian throws his microphone to a target location. The first teammate to pick it up is healed for  health."
+    },
+    {
+      "name": "Wall Of Sound",
+      "id": 23001248,
+      "file": "damian_2.png",
+      "description": "Damian summons a temporary wall of indestructible amps!"
+    }
+  ],
+  "trunk": [
+    {
+      "name": "For The Queen",
+      "id": 23001000,
+      "file": "trunk_1.png",
+      "description": "Trunk instantly spreads ants in a large area."
+    },
+    {
+      "name": "Worker Ants",
+      "id": 23001001,
+      "file": "trunk_2.png",
+      "description": "Trunk heals from the first source of damage taken for the next x secs."
+    }
+  ],
+  "alli": [
+    {
+      "name": "Feed The Gators",
+      "id": 23000991,
+      "file": "alli_1.png",
+      "description": "The next main attack heals Alli for x% of damage dealt."
+    },
+    {
+      "name": "Cold-Blooded",
+      "id": 23000992,
+      "file": "alli_2.png",
+      "description": "Alli becomes enraged for the next x secs. Can only be activated when an enemy is visible."
+    }
+  ],
+  "kaze": [
+    {
+      "name": "Gracious Host",
+      "id": 23000940,
+      "file": "kaze_1.png",
+      "description": "Switch to Ninja Aspect and gain x% Movement Speed for x sec"
+    },
+    {
+      "name": "Hensojutsu",
+      "id": 23000941,
+      "file": "kaze_2.png",
+      "description": "Switch to Ninja Aspect and gain short invisibility"
+    }
+  ],
+  "jaeyong": [
+    {
+      "name": "Weekend Warrior",
+      "id": 23000931,
+      "file": "jaeyong_1.png",
+      "description": "Deals area damage and increases main attack damage for x sec."
+    },
+    {
+      "name": "Time For A Slow Song",
+      "id": 23000932,
+      "file": "jaeyong_2.png",
+      "description": "Jae-yong slows enemies around him and his attacks will leave trails of slowing paperwork for x sec."
+    }
+  ],
+  "finx": [
+    {
+      "name": "Back To The Finxture",
+      "id": 23000917,
+      "file": "finx_1.png",
+      "description": "Finx steps back in time, returning to the position and ammo he had x seconds ago."
+    },
+    {
+      "name": "No Escape",
+      "id": 23000918,
+      "file": "finx_2.png",
+      "description": "Finx's next projectiles from his main attack freeze the enemies in time for x seconds, making them unable to take actions for the duration, but also making them immune to any damage."
+    }
+  ],
+  "lumi": [
+    {
+      "name": "Hit The Lights",
+      "id": 23000907,
+      "file": "lumi_1.png",
+      "description": "Lumi ignites her morning stars on the ground, producing flames which damage nearby enemies for x seconds. Damage per second: x"
+    },
+    {
+      "name": "Grim And Frostbitten",
+      "id": 23000908,
+      "file": "lumi_2.png",
+      "description": "Lumi creates freezing winds around her morning stars on the ground, creating a slippery surface for x secs."
+    }
+  ],
+  "ollie": [
+    {
+      "name": "Regulate",
+      "id": 23000885,
+      "file": "ollie_1.png",
+      "description": "Ollie jumps and does a rad kickflip, hypnotizing all enemies where he lands for x seconds."
+    },
+    {
+      "name": "All Eyez On Me",
+      "id": 23000886,
+      "file": "ollie_2.png",
+      "description": "Ollie's next attack will hypnotize any enemies hit for x seconds."
+    }
+  ],
+  "meeple": [
+    {
+      "name": "Mansions Of Meeple",
+      "id": 23000877,
+      "file": "meeple_1.png",
+      "description": "Meeple's next attack creates dice towers around the impact area and deals x damage."
+    },
+    {
+      "name": "Ragequit",
+      "id": 23000878,
+      "file": "meeple_2.png",
+      "description": "Meeple lashes out in rage at nearby enemies, stunning and knocking them back. The less hitpoints Meeple has, the stun and knockback effects increase."
+    }
+  ],
+  "juju": [
+    {
+      "name": "Voodoo Chile",
+      "id": 23000850,
+      "file": "juju_1.png",
+      "description": "Juju's next main attack has the power of all three elements."
+    },
+    {
+      "name": "Elementalist",
+      "id": 23000851,
+      "file": "juju_2.png",
+      "description": "Juju gains a temporary buff based on the current environment she is standing on. Earth: Damage reduction Grass: Invisibility Water: Increased movement speed"
+    }
+  ],
+  "shade": [
+    {
+      "name": "Longarms",
+      "id": 23000834,
+      "file": "shade_1.png",
+      "description": "The next main attack has x% longer range."
+    },
+    {
+      "name": "Jump Scare",
+      "id": 23000835,
+      "file": "shade_2.png",
+      "description": "Shade spooks nearby enemies, slowing them for x seconds."
+    }
+  ],
+  "kenji": [
+    {
+      "name": "Dashi Dash",
+      "id": 23000817,
+      "file": "kenji_1.png",
+      "description": "Kenji's basic attack only uses Dash for the next x seconds."
+    },
+    {
+      "name": "Hosomaki Healing",
+      "id": 23000818,
+      "file": "kenji_2.png",
+      "description": "Kenji instantly heals x% of damage taken over the last x seconds."
+    }
+  ],
+  "moe": [
+    {
+      "name": "Dodgy Digging",
+      "id": 23000806,
+      "file": "moe_1.png",
+      "description": "Moe digs up some \"borrowed\" goods, increasing his Super charge rate by x% for x seconds."
+    },
+    {
+      "name": "Rat Race",
+      "id": 23000807,
+      "file": "moe_2.png",
+      "description": "Moe dashes a short distance in his Driller, destroying walls and knocking back Brawlers in the process."
+    }
+  ],
+  "clancy": [
+    {
+      "name": "Snappy Shooting",
+      "id": 23000774,
+      "file": "clancy_1.png",
+      "description": "Clancy gains double tokens for x seconds."
+    },
+    {
+      "name": "Tactical Retreat",
+      "id": 23000775,
+      "file": "clancy_2.png",
+      "description": "Clancy dashes and reloads x ammo"
+    }
+  ],
+  "berry": [
+    {
+      "name": "Friendship Is Great",
+      "id": 23000766,
+      "file": "berry_1.png",
+      "description": "Berry swipes his tail, knocking back enemies and healing nearby allies for x health."
+    },
+    {
+      "name": "Healthy Additives",
+      "id": 23000767,
+      "file": "berry_2.png",
+      "description": "Berry's next main attack area lasts for x% longer."
+    }
+  ],
+  "lily": [
+    {
+      "name": "Vanish",
+      "id": 23000754,
+      "file": "lily_1.png",
+      "description": "Lily enters the Shadow Realm for x seconds"
+    },
+    {
+      "name": "Repot",
+      "id": 23000755,
+      "file": "lily_2.png",
+      "description": "The next Flourish, becomes a thrown attack, and Lily teleports to the destination on impact"
+    }
+  ],
+  "draco": [
+    {
+      "name": "Upper Cut",
+      "id": 23000736,
+      "file": "draco_1.png",
+      "description": "The next Lance Stab also throws enemies in the air for a short time."
+    },
+    {
+      "name": "Last Stand",
+      "id": 23000737,
+      "file": "draco_2.png",
+      "description": "Draco can not fall under one health for x seconds."
+    }
+  ],
+  "angelo": [
+    {
+      "name": "Stinging Flight",
+      "id": 23000677,
+      "file": "angelo_1.png",
+      "description": "Fly into the air for x seconds. Drains x health from nearby enemies on takeoff."
+    },
+    {
+      "name": "Master Fletcher",
+      "id": 23000678,
+      "file": "angelo_2.png",
+      "description": "The next Take Aim pierces enemies and the environment."
+    }
+  ],
+  "melodie": [
+    {
+      "name": "Perfect Pitch",
+      "id": 23000669,
+      "file": "melodie_1.png",
+      "description": "Melodie's notes get x% increased movement speed and x% wider orbit for x seconds."
+    },
+    {
+      "name": "Interlude",
+      "id": 23000670,
+      "file": "melodie_2.png",
+      "description": "Melodie gains x% Shield from each note orbiting her."
+    }
+  ],
+  "larrylawrie": [
+    {
+      "name": "Order Swap",
+      "id": 23000661,
+      "file": "larrylawrie_1.png",
+      "description": "Swap weapons with Lawrie."
+    },
+    {
+      "name": "Order Fall Back",
+      "id": 23000662,
+      "file": "larrylawrie_2.png",
+      "description": "Dash towards Lawrie while Lawrie dashes towards you, healing both for x% of max health."
+    }
+  ],
+  "kit": [
+    {
+      "name": "Cardboard Box",
+      "id": 23000648,
+      "file": "kit_1.png",
+      "description": "Hide in a cardboard box becoming invisible for x seconds. Charges the Super x faster while stationary."
+    },
+    {
+      "name": "Cheeseburger",
+      "id": 23000649,
+      "file": "kit_2.png",
+      "description": "Heals himself and the friendly Brawler he is attached to for x."
+    }
+  ],
+  "mico": [
+    {
+      "name": "Clipping Scream",
+      "id": 23000639,
+      "file": "mico_1.png",
+      "description": "Mico lets out a deafening scream towards the nearest enemy, dealing  damage and slowing down enemies for  seconds on hit."
+    },
+    {
+      "name": "Presto",
+      "id": 23000640,
+      "file": "mico_2.png",
+      "description": "Mico's next jump has x% longer range."
+    }
+  ],
+  "charlie": [
+    {
+      "name": "Spiders",
+      "id": 23000625,
+      "file": "charlie_1.png",
+      "description": "Charlie releases x spiders that seek and attack the nearest enemies."
+    },
+    {
+      "name": "Personal Space",
+      "id": 23000626,
+      "file": "charlie_2.png",
+      "description": "Charlie cocoons herself, healing x% of her total health."
+    }
+  ],
+  "chuck": [
+    {
+      "name": "Rerouting",
+      "id": 23000611,
+      "file": "chuck_1.png",
+      "description": "Chuck removes the nearest Post and recharges his Super."
+    },
+    {
+      "name": "Ghost Train",
+      "id": 23000612,
+      "file": "chuck_2.png",
+      "description": "Chuck's next Super can go through walls!"
+    }
+  ],
+  "pearl": [
+    {
+      "name": "Overcooked",
+      "id": 23000603,
+      "file": "pearl_1.png",
+      "description": "Next basic attack shoots burning cookies, dealing x extra damage over time."
+    },
+    {
+      "name": "Made With Love",
+      "id": 23000604,
+      "file": "pearl_2.png",
+      "description": "Next basic attack shoots perfectly baked cookies ignoring enemies and healing allies for x over time instead."
+    }
+  ],
+  "doug": [
+    {
+      "name": "Double Sausage",
+      "id": 23000595,
+      "file": "doug_1.png",
+      "description": "The next Snack Attack only heals allies but doubles the amount."
+    },
+    {
+      "name": "Extra Mustard",
+      "id": 23000596,
+      "file": "doug_2.png",
+      "description": "The next Snack Attack only damages enemies but doubles the amount."
+    }
+  ],
+  "cordelius": [
+    {
+      "name": "Replanting",
+      "id": 23000587,
+      "file": "cordelius_1.png",
+      "description": "Cordelius jumps over a piece of terrain quickly."
+    },
+    {
+      "name": "Poison Mushroom",
+      "id": 23000588,
+      "file": "cordelius_2.png",
+      "description": "Cordelius's next main attack shoots a poison mushroom that prevents the enemy from attacking for x seconds."
+    }
+  ],
+  "hank": [
+    {
+      "name": "Water Balloons",
+      "id": 23000579,
+      "file": "hank_1.png",
+      "description": "The next Balloon Blast also slows down enemies for x seconds."
+    },
+    {
+      "name": "Barricade",
+      "id": 23000580,
+      "file": "hank_2.png",
+      "description": "Hank takes x% reduced damage for x seconds."
+    }
+  ],
+  "maisie": [
+    {
+      "name": "Disengage",
+      "id": 23000571,
+      "file": "maisie_1.png",
+      "description": "Maisie blasts the ground, stunning enemies for x seconds while dashing forward."
+    },
+    {
+      "name": "Finish Them",
+      "id": 23000572,
+      "file": "maisie_2.png",
+      "description": "Maisie instantly reloads x ammo and increases the next Pressure Rocket damage by x% of the target's missing HP."
+    }
+  ],
+  "willow": [
+    {
+      "name": "Spellbound",
+      "id": 23000563,
+      "file": "willow_1.png",
+      "description": "Willow's next Lantern's Curse deals x more damage and applies the entire damage instantly rather than over time."
+    },
+    {
+      "name": "Dive",
+      "id": 23000564,
+      "file": "willow_2.png",
+      "description": "Willow dives for x seconds, becoming untargetable but unable to take any action for the duration."
+    }
+  ],
+  "rt": [
+    {
+      "name": "Out Of Line",
+      "id": 23000555,
+      "file": "rt_1.png",
+      "description": "Instantly charges R-T's Super."
+    },
+    {
+      "name": "Hacks",
+      "id": 23000556,
+      "file": "rt_2.png",
+      "description": "Instantly trigger all active marks on all enemy Brawlers, dealing their damage."
+    }
+  ],
+  "mandy": [
+    {
+      "name": "Caramelize",
+      "id": 23000545,
+      "file": "mandy_1.png",
+      "description": "Mandy's next candy from her Candy Dispenser slows down enemies on hit for  seconds."
+    },
+    {
+      "name": "Cookie Crumbs",
+      "id": 23000546,
+      "file": "mandy_2.png",
+      "description": "Mandy's next candy from her Candy Dispenser pierces enemies and environment."
+    }
+  ],
+  "gray": [
+    {
+      "name": "Walking Cane",
+      "id": 23000537,
+      "file": "gray_1.png",
+      "description": "Gray's next hit from the Finger Pistol shoots a walking cane which pulls enemies back by a bit."
+    },
+    {
+      "name": "Grand Piano",
+      "id": 23000538,
+      "file": "gray_2.png",
+      "description": "Gray's next hit from the Finger Pistol will also leave a target on the ground where a piano will land and hurt enemies. It would be too bad if someone would get hurt, right?"
+    }
+  ],
+  "chester": [
+    {
+      "name": "Spicy Dice",
+      "id": 23000529,
+      "file": "chester_1.png",
+      "description": "Chester gets a new random Super that is different from his current one."
+    },
+    {
+      "name": "Candy Beans",
+      "id": 23000530,
+      "file": "chester_2.png",
+      "description": "Chester eats a mystery flavored candy bean from his cap, gaining a random buff for x seconds."
+    }
+  ],
+  "buster": [
+    {
+      "name": "Utility Belt",
+      "id": 23000521,
+      "file": "buster_1.png",
+      "description": "Buster heals himself and all nearby allies for x health for each ally in his Super's charge area."
+    },
+    {
+      "name": "Slo-Mo Replay",
+      "id": 23000522,
+      "file": "buster_2.png",
+      "description": "Buster's next Lens Flare pulls enemies towards him."
+    }
+  ],
+  "gus": [
+    {
+      "name": "Kooky Popper",
+      "id": 23000513,
+      "file": "gus_1.png",
+      "description": "Explode all uncollected spirits, dealing x damage to nearby enemies."
+    },
+    {
+      "name": "Soul Switcher",
+      "id": 23000514,
+      "file": "gus_2.png",
+      "description": "Gus loses x% health but gains x% spirit instantly."
+    }
+  ],
+  "sam": [
+    {
+      "name": "Magnetic Field",
+      "id": 23000505,
+      "file": "sam_1.png",
+      "description": "While the Knuckle Busters are on the ground, Sam can activate them to pull in nearby enemies."
+    },
+    {
+      "name": "Pulse Repellent",
+      "id": 23000506,
+      "file": "sam_2.png",
+      "description": "Upon landing on the ground, Sam's next deployed Knuckle Busters releases an electric pulse that knocks back enemies."
+    }
+  ],
+  "otis": [
+    {
+      "name": "Dormant Star",
+      "id": 23000497,
+      "file": "otis_1.png",
+      "description": "The next starfish will stay on the ground if an enemy is not hit, laying dormant until an enemy gets close."
+    },
+    {
+      "name": "Phat Splatter",
+      "id": 23000498,
+      "file": "otis_2.png",
+      "description": "Otis's next attack shoots a giant ink ball that leaves a puddle, dealing x damage over time for x seconds."
+    }
+  ],
+  "bonnie": [
+    {
+      "name": "Sugar Rush",
+      "id": 23000480,
+      "file": "bonnie_1.png",
+      "description": "Clyde's movement and reload speed are increased by % for  seconds."
+    },
+    {
+      "name": "Crash Test",
+      "id": 23000481,
+      "file": "bonnie_2.png",
+      "description": "Bonnie dashes forward, knocking back enemies and dealing x damage on hit."
+    }
+  ],
+  "janet": [
+    {
+      "name": "Drop The Bass",
+      "id": 23000472,
+      "file": "janet_1.png",
+      "description": "Janet deploys a speaker that deals x damage per second to all enemies in the area until it gets destroyed."
+    },
+    {
+      "name": "Backstage Pass",
+      "id": 23000473,
+      "file": "janet_2.png",
+      "description": "Janet's next High Note pushes her back, even over walls. The more focused her attack is, the further she'll be pushed back."
+    }
+  ],
+  "eve": [
+    {
+      "name": "Gotta Go",
+      "id": 23000454,
+      "file": "eve_1.png",
+      "description": "Eve jumps away and leaves behind a hatchling."
+    },
+    {
+      "name": "Motherly Love",
+      "id": 23000455,
+      "file": "eve_2.png",
+      "description": "Hatchlings spawned from an active big egg will now heal allies over time instead of dealing damage."
+    }
+  ],
+  "fang": [
+    {
+      "name": "Corn-Fu",
+      "id": 23000440,
+      "file": "fang_1.png",
+      "description": "Fang tosses a handful of corn kernels into the air, making it rain popcorn! Each kernel pop deals x damage."
+    },
+    {
+      "name": "Roundhouse Kick",
+      "id": 23000464,
+      "file": "fang_2.png",
+      "description": "Fang spins and hits all enemies around him, stunning them for x seconds."
+    }
+  ],
+  "lola": [
+    {
+      "name": "Freeze Frame",
+      "id": 23000433,
+      "file": "lola_1.png",
+      "description": "Lola's Ego stops moving to strike a pose! Gaining a x% shield for x seconds."
+    },
+    {
+      "name": "Stunt Double",
+      "id": 23000456,
+      "file": "lola_2.png",
+      "description": "Lola and her Ego switch locations, both recovering x health."
+    }
+  ],
+  "meg": [
+    {
+      "name": "Jolting Volts",
+      "id": 23000423,
+      "file": "meg_1.png",
+      "description": "Heal the Mecha by x health per second for x seconds. Can only be used in mecha form."
+    },
+    {
+      "name": "Toolbox",
+      "id": 23000489,
+      "file": "meg_2.png",
+      "description": "Meg ejects from the Mecha, launching it forward, dealing  damage on the way. Charges Super after during the next   seconds."
+    }
+  ],
+  "ash": [
+    {
+      "name": "Chill Pill",
+      "id": 23000416,
+      "file": "ash_1.png",
+      "description": "Though furious, Ash has to collect himself. A full Rage meter will recover x health when this Gadget is popped - less Rage, less recovery."
+    },
+    {
+      "name": "Rotten Banana",
+      "id": 23000465,
+      "file": "ash_2.png",
+      "description": "Ash loses x% health and instantly gains x% rage."
+    }
+  ],
+  "griff": [
+    {
+      "name": "Piggy Bank",
+      "id": 23000399,
+      "file": "griff_1.png",
+      "description": "Griff throws a firecracker-filled piggy bank that explodes after a short delay, destroying obstacles and dealing  damage to opponents within range."
+    },
+    {
+      "name": "Coin Shower",
+      "id": 23000487,
+      "file": "griff_2.png",
+      "description": "Griff throws a shower of coins at target area, dealing  damage per sec to opponents inside."
+    }
+  ],
+  "buzz": [
+    {
+      "name": "Reserve Buoy",
+      "id": 23000392,
+      "file": "buzz_1.png",
+      "description": "Instantly fills the Super meter, but the next Torpedo Throw doesn't stun opponents."
+    },
+    {
+      "name": "X-Ray-Shades",
+      "id": 23000490,
+      "file": "buzz_2.png",
+      "description": "Buzz can see into all bushes in his Super charging area for x seconds."
+    }
+  ],
+  "grom": [
+    {
+      "name": "Watchtower",
+      "id": 23000385,
+      "file": "grom_1.png",
+      "description": "Grom ejects a Watchtower from his Grom Bomb that gives all allies sight into bushes over a large area. The watchtower slowly loses health over time."
+    },
+    {
+      "name": "Radio Check",
+      "id": 23000460,
+      "file": "grom_2.png",
+      "description": "Grom's next attack throws x Buds in rapid succession."
+    }
+  ],
+  "squeak": [
+    {
+      "name": "Windup",
+      "id": 23000378,
+      "file": "squeak_1.png",
+      "description": "Squeak's next Sticky Blomb deals x% more damage and has x% longer range."
+    },
+    {
+      "name": "Residue",
+      "id": 23000462,
+      "file": "squeak_2.png",
+      "description": "Squeak's next Sticky Blomb leaves a residue area behind after exploding, slowing down enemies and giving allies sight into bushes for x seconds."
+    }
+  ],
+  "belle": [
+    {
+      "name": "Nest Egg",
+      "id": 23000371,
+      "file": "belle_1.png",
+      "description": "Belle places a trap on the ground that will explode when triggered by an opponent. The trap deals  damage, and slows down anyone within its blast radius for  seconds."
+    },
+    {
+      "name": "Reverse Polarity",
+      "id": 23000463,
+      "file": "belle_2.png",
+      "description": "Belle's next Electro-Bolt bounces from walls."
+    }
+  ],
+  "stu": [
+    {
+      "name": "Speed Zone",
+      "id": 23000364,
+      "file": "stu_1.png",
+      "description": "Stu drops a booster that makes himself, his teammates and other allies move faster while inside its area of effect."
+    },
+    {
+      "name": "Breakthrough",
+      "id": 23000401,
+      "file": "stu_2.png",
+      "description": "Stu's next Super can bash through obstacles, making debris fly forward. Each piece of debris deals x damage to any opponent it hits."
+    }
+  ],
+  "ruffs": [
+    {
+      "name": "Take Cover",
+      "id": 23000347,
+      "file": "ruffs_1.png",
+      "description": "Ruffs throws down x sandbags as cover. Each one has x% of Ruffs' max health."
+    },
+    {
+      "name": "Air Support",
+      "id": 23000402,
+      "file": "ruffs_2.png",
+      "description": "Ruffs calls a barrage around the nearest opponent, dealing x damage with each hit."
+    }
+  ],
+  "edgar": [
+    {
+      "name": "Lets Fly",
+      "id": 23000340,
+      "file": "edgar_1.png",
+      "description": "Edgar's scarf grabs the closest Brawler and he jumps behind them. His scarf can also pull him towards walls."
+    },
+    {
+      "name": "Hardcore",
+      "id": 23000403,
+      "file": "edgar_2.png",
+      "description": "Edgar gets a shield that protects him from the next  damage. The shield gets weaker over time."
+    }
+  ],
+  "byron": [
+    {
+      "name": "Shot In The Arm",
+      "id": 23000333,
+      "file": "byron_1.png",
+      "description": "Byron uses one of his shots to heal himself x per second for x seconds."
+    },
+    {
+      "name": "Booster Shots",
+      "id": 23000461,
+      "file": "byron_2.png",
+      "description": "Byron's next attack shoots x darts instead of one, each dealing x% less damage and x% less healing."
+    }
+  ],
+  "lou": [
+    {
+      "name": "Ice Block",
+      "id": 23000326,
+      "file": "lou_1.png",
+      "description": "Lou shields himself with ice, becoming invulnerable for x seconds."
+    },
+    {
+      "name": "Cryo Syrup",
+      "id": 23000400,
+      "file": "lou_2.png",
+      "description": "Instantly adds x% freeze meter to opponents inside Lou's Super."
+    }
+  ],
+  "amber": [
+    {
+      "name": "Fire Starters",
+      "id": 23000309,
+      "file": "amber_1.png",
+      "description": "Amber runs % faster for  seconds while spilling her fire fluid, which she can then ignite."
+    },
+    {
+      "name": "Dancing Flames",
+      "id": 23000488,
+      "file": "amber_2.png",
+      "description": "Amber creates x orbiting flames around her for x seconds, dealing x damage on hit."
+    }
+  ],
+  "colette": [
+    {
+      "name": "Na-Ah",
+      "id": 23000302,
+      "file": "colette_1.png",
+      "description": "Colette fires a projectile that charms a Brawler for  sec. Uses ammo."
+    },
+    {
+      "name": "Gotcha",
+      "id": 23000457,
+      "file": "colette_2.png",
+      "description": "Colette fires a projectile that heals for  % of damage dealt. Uses ammo and can be fired 3 times before cooldown."
+    }
+  ],
+  "surge": [
+    {
+      "name": "Power Surge",
+      "id": 23000285,
+      "file": "surge_1.png",
+      "description": "Surge's power surges! Increase Super charge rate by  % for  sec."
+    },
+    {
+      "name": "Power Shield",
+      "id": 23000485,
+      "file": "surge_2.png",
+      "description": "Within the next  seconds, Surge consumes  % of the damage of the next incoming hit and uses the energy to reload  ammo."
+    }
+  ],
+  "sprout": [
+    {
+      "name": "Garden Mulcher",
+      "id": 23000244,
+      "file": "sprout_1.png",
+      "description": "Sprout consumes a bush to restore x health."
+    },
+    {
+      "name": "Transplant",
+      "id": 23000315,
+      "file": "sprout_2.png",
+      "description": "Sprout destroys its current Hedge, but will instantly have its Super fully charged again."
+    }
+  ],
+  "nani": [
+    {
+      "name": "Warpin Time",
+      "id": 23000278,
+      "file": "nani_1.png",
+      "description": "Nani teleports to Peep's last known location and ends her Super."
+    },
+    {
+      "name": "Return To Sender",
+      "id": 23000353,
+      "file": "nani_2.png",
+      "description": "For the next x seconds, the first time Nani takes damage from an enemy, x% of the damage is returned to the enemy."
+    }
+  ],
+  "gale": [
+    {
+      "name": "Spring Ejector",
+      "id": 23000277,
+      "file": "gale_1.png",
+      "description": "Gale drops a bounce pad underfoot, launching friend and foe alike into the air."
+    },
+    {
+      "name": "Twister",
+      "id": 23000407,
+      "file": "gale_2.png",
+      "description": "Gale uses his leaf blower to create a local tornado, which will push away any opponents that try to pass through."
+    }
+  ],
+  "jacky": [
+    {
+      "name": "Pneumatic Booster",
+      "id": 23000256,
+      "file": "jacky_1.png",
+      "description": "Jacky gets a burst of energy and moves % faster for  seconds."
+    },
+    {
+      "name": "Rebuild",
+      "id": 23000486,
+      "file": "jacky_2.png",
+      "description": "Jacky rebuilds the environment in a small radius around her."
+    }
+  ],
+  "max": [
+    {
+      "name": "Phase Shifter",
+      "id": 23000254,
+      "file": "max_1.png",
+      "description": "Max dashes forward, and becomes immune to all damage from enemies while dashing."
+    },
+    {
+      "name": "Sneaky Sneakers",
+      "id": 23000311,
+      "file": "max_2.png",
+      "description": "Max throws a lightning bolt. If she reactivates the Gadget, or after  seconds, she blinks back to the lightning bolt and heals any damage taken since."
+    }
+  ],
+  "mrp": [
+    {
+      "name": "Service Bell",
+      "id": 23000269,
+      "file": "mrp_1.png",
+      "description": "Mr. P buffs his current porter by increasing its damage by x and health by x."
+    },
+    {
+      "name": "Porter Reinforcements",
+      "id": 23000349,
+      "file": "mrp_2.png",
+      "description": "The next attack will spawn a weak porter where the attack lands."
+    }
+  ],
+  "emz": [
+    {
+      "name": "Friendzoner",
+      "id": 23000274,
+      "file": "emz_1.png",
+      "description": "Emz fires off some hairspray that pushes enemies back. Deals \u00a0damage."
+    },
+    {
+      "name": "Acid Spray",
+      "id": 23000459,
+      "file": "emz_2.png",
+      "description": "Emz squirts out hairspray that goes through walls! Deals \u00a0damage."
+    }
+  ],
+  "bea": [
+    {
+      "name": "Honey Molasses",
+      "id": 23000271,
+      "file": "bea_1.png",
+      "description": "Bea drops a beehive with a splash of sticky honey around it. The honey slows down enemies that step in it."
+    },
+    {
+      "name": "Rattled Hive",
+      "id": 23000312,
+      "file": "bea_2.png",
+      "description": "Bea unleashes x angry bees that circle away from her, dealing more damage the further they go (up to x damage)."
+    }
+  ],
+  "sandy": [
+    {
+      "name": "Sleep Stimulator",
+      "id": 23000270,
+      "file": "sandy_1.png",
+      "description": "Sandy falls asleep for x seconds and his health is fully restored."
+    },
+    {
+      "name": "Sweet Dreams",
+      "id": 23000405,
+      "file": "sandy_2.png",
+      "description": "Sandy's next attack lulls opponents to sleep for x seconds. They will, however, wake up from any damage."
+    }
+  ],
+  "8bit": [
+    {
+      "name": "Cheat Cartridge",
+      "id": 23000259,
+      "file": "8bit_1.png",
+      "description": "8-Bit instantly teleports to his Damage Booster."
+    },
+    {
+      "name": "Extra Credits",
+      "id": 23000318,
+      "file": "8bit_2.png",
+      "description": "8-Bit fires  projectiles. Consumes ammo."
+    }
+  ],
+  "bibi": [
+    {
+      "name": "Vitamin Booster",
+      "id": 23000275,
+      "file": "bibi_1.png",
+      "description": "Bibi heals  health per second for  seconds."
+    },
+    {
+      "name": "Extra Sticky",
+      "id": 23000458,
+      "file": "bibi_2.png",
+      "description": "Bibi throws bubble gum that slows all enemies in it by %"
+    }
+  ],
+  "carl": [
+    {
+      "name": "Heat Ejector",
+      "id": 23000262,
+      "file": "carl_1.png",
+      "description": "The next pickaxe Carl throws will drop a trail of hot rocks behind it! Opponents that touch them are set on fire and receive x damage per second."
+    },
+    {
+      "name": "Flying Hook",
+      "id": 23000317,
+      "file": "carl_2.png",
+      "description": "Carl's next attack makes his pickaxe pull him to the farthest point of the attack."
+    }
+  ],
+  "rosa": [
+    {
+      "name": "Grow Light",
+      "id": 23000242,
+      "file": "rosa_1.png",
+      "description": "Rosa fertilizes the ground around her and bushes instantly grow to provide great cover."
+    },
+    {
+      "name": "Unfriendly Bushes",
+      "id": 23000348,
+      "file": "rosa_2.png",
+      "description": "All opponents hiding in bushes take  damage and get slowed down for  seconds."
+    }
+  ],
+  "leon": [
+    {
+      "name": "Clone Projector",
+      "id": 23000276,
+      "file": "leon_1.png",
+      "description": "Leon creates an illusion of himself to confuse his enemies. The clone attacks enemies dealing minor damage"
+    },
+    {
+      "name": "Lollipop Drop",
+      "id": 23000408,
+      "file": "leon_2.png",
+      "description": "Leon throws a stealthy area for his team to hide in. The lollipop slowly loses its health over time."
+    }
+  ],
+  "tick": [
+    {
+      "name": "Mine Mania",
+      "id": 23000253,
+      "file": "tick_1.png",
+      "description": "Tick's next attack fires x mines."
+    },
+    {
+      "name": "Last Hurrah",
+      "id": 23000355,
+      "file": "tick_2.png",
+      "description": "Tick gains a x% shield for x seconds. After that, it bursts out for x damage."
+    }
+  ],
+  "gene": [
+    {
+      "name": "Lamp Blowout",
+      "id": 23000252,
+      "file": "gene_1.png",
+      "description": "All enemies close to Gene are instantly pushed back. If at least one enemy Brawler is within range, Gene will also restore x% of his max health."
+    },
+    {
+      "name": "Vengeful Spirits",
+      "id": 23000352,
+      "file": "gene_2.png",
+      "description": "Gene shoots a homing missile at all visible opponents within a large area, dealing up to x damage based on distance."
+    }
+  ],
+  "frank": [
+    {
+      "name": "Active Noise Canceling",
+      "id": 23000261,
+      "file": "frank_1.png",
+      "description": "Fires a soundwave in a target direction, dealing  damage to Brawlers. Frank becomes immune to Crowd Control for  secs."
+    },
+    {
+      "name": "Irresistible Attraction",
+      "id": 23000351,
+      "file": "frank_2.png",
+      "description": "Frank aims a long-range attack that pulls enemies towards him. Consumes ammo. Does \u00a0damage."
+    }
+  ],
+  "penny": [
+    {
+      "name": "Salty Barrel",
+      "id": 23000248,
+      "file": "penny_1.png",
+      "description": "Penny drops a barrel of salt that blocks enemy projectiles. She can also use it to burst her own gold pouches."
+    },
+    {
+      "name": "Trusty Spyglass",
+      "id": 23000287,
+      "file": "penny_2.png",
+      "description": "Penny's cannon blasts at every visible enemy position within range."
+    }
+  ],
+  "darryl": [
+    {
+      "name": "Recoiling Rotator",
+      "id": 23000260,
+      "file": "darryl_1.png",
+      "description": "Darryl spins around and sprays a barrage of shots in all directions. Each shot deals x damage and recharges his Super by x% if it hits enemies!"
+    },
+    {
+      "name": "Tar Barrel",
+      "id": 23000313,
+      "file": "darryl_2.png",
+      "description": "Darryl creates a slowing area around himself for x seconds."
+    }
+  ],
+  "tara": [
+    {
+      "name": "Psychic Enhancer",
+      "id": 23000266,
+      "file": "tara_1.png",
+      "description": "Tara and her allies are able to see all enemies, even inside bushes, for x seconds."
+    },
+    {
+      "name": "Support From Beyond",
+      "id": 23000356,
+      "file": "tara_2.png",
+      "description": "Tara surrounds herself with three weak Shadows that attack opponents and disappear after x seconds."
+    }
+  ],
+  "pam": [
+    {
+      "name": "Pulse Modulator",
+      "id": 23000257,
+      "file": "pam_1.png",
+      "description": "Pam triggers her turret to emit a pulse that heals allies inside the turret's range, including herself, for x health."
+    },
+    {
+      "name": "Scrapsucker",
+      "id": 23000404,
+      "file": "pam_2.png",
+      "description": "Each hit from Pam's next attack removes x% of opposing Brawlers' maximum ammo. Pam reclaims x% of the ammo for herself."
+    }
+  ],
+  "piper": [
+    {
+      "name": "Auto Aimer",
+      "id": 23000268,
+      "file": "piper_1.png",
+      "description": "Piper pops a defensive shot at the closest enemy, dealing x damage, while also pushing them back."
+    },
+    {
+      "name": "Homemade Recipe",
+      "id": 23000291,
+      "file": "piper_2.png",
+      "description": "On activation, Piper's next main attack will home in on enemies."
+    }
+  ],
+  "bo": [
+    {
+      "name": "Super Totem",
+      "id": 23000263,
+      "file": "bo_1.png",
+      "description": "Bo places a totem that increases allies' Super charging rate by %. The totem slowly loses its health over time."
+    },
+    {
+      "name": "Tripwire",
+      "id": 23000289,
+      "file": "bo_2.png",
+      "description": "Bo triggers all of his mines after x seconds. During the delay the mines are completely undetectable to opponents."
+    }
+  ],
+  "poco": [
+    {
+      "name": "Tuning Fork",
+      "id": 23000267,
+      "file": "poco_1.png",
+      "description": "Poco and all nearby allies heal x health per second for x seconds."
+    },
+    {
+      "name": "Protective Tunes",
+      "id": 23000350,
+      "file": "poco_2.png",
+      "description": "Removes active adverse effects from friendly Brawlers in a large area and gives a x second immunity."
+    }
+  ],
+  "crow": [
+    {
+      "name": "Instapoison",
+      "id": 23000243,
+      "file": "crow_1.png",
+      "description": "Crow instantly deals remaining poison damage to all Crow-poisoned enemies and gains a shield for % of the value."
+    },
+    {
+      "name": "Slowing Toxin",
+      "id": 23000286,
+      "file": "crow_2.png",
+      "description": "Throw a kunai that damages, slows and poisons the first enemy hit for  sec."
+    }
+  ],
+  "mortis": [
+    {
+      "name": "Combo Spinner",
+      "id": 23000265,
+      "file": "mortis_1.png",
+      "description": "Mortis spins his shovel dealing  damage. Can also be aimed for a short-distance bat attack."
+    },
+    {
+      "name": "Creature Of The Night",
+      "id": 23000290,
+      "file": "mortis_2.png",
+      "description": "Mortis turns into a flock of bats and travels to a target location."
+    }
+  ],
+  "elprimo": [
+    {
+      "name": "Suplex Supplement",
+      "id": 23000264,
+      "file": "elprimo_1.png",
+      "description": "El Primo grabs the closest enemy within his reach and flips them like a pancake over his broad shoulders."
+    },
+    {
+      "name": "Asteroid Belt",
+      "id": 23000292,
+      "file": "elprimo_2.png",
+      "description": "El Primo summons a small meteor to strike the nearest enemy. It deals x damage and destroys walls."
+    }
+  ],
+  "dynamike": [
+    {
+      "name": "Fidget Spinner",
+      "id": 23000258,
+      "file": "dynamike_1.png",
+      "description": "Dynamike spins furiously with % increased movement speed and throws multiple sticks of dynamite around himself. Each dynamite deals  damage to enemies."
+    },
+    {
+      "name": "Satchel Charge",
+      "id": 23000294,
+      "file": "dynamike_2.png",
+      "description": "Once activated, the next main attack also stuns enemies for x seconds."
+    }
+  ],
+  "nita": [
+    {
+      "name": "Bear Paws",
+      "id": 23000249,
+      "file": "nita_1.png",
+      "description": "Nita commands her bear to slam the ground, stunning all enemies within its reach."
+    },
+    {
+      "name": "Faux Fur",
+      "id": 23000314,
+      "file": "nita_2.png",
+      "description": "For the next  seconds, Nita's bear gets a % shield against damage."
+    }
+  ],
+  "jessie": [
+    {
+      "name": "Spark Plug",
+      "id": 23000251,
+      "file": "jessie_1.png",
+      "description": "Jessie triggers a shockwave from her turret, slowing down all enemies within its area of effect."
+    },
+    {
+      "name": "Recoil Spring",
+      "id": 23000295,
+      "file": "jessie_2.png",
+      "description": "Scrappy's attack speed is doubled for x seconds."
+    }
+  ],
+  "barley": [
+    {
+      "name": "Sticky Syrup Mixer",
+      "id": 23000250,
+      "file": "barley_1.png",
+      "description": "Barley drops a sticky concoction that leaves a puddle, slowing down all enemies that make contact with it."
+    },
+    {
+      "name": "Herbal Tonic",
+      "id": 23000293,
+      "file": "barley_2.png",
+      "description": "Barley throws a healing potion at nearby allies that creates an area that heals for x health per second."
+    }
+  ],
+  "spike": [
+    {
+      "name": "Popping Pincushion",
+      "id": 23000247,
+      "file": "spike_1.png",
+      "description": "Spike aims and fires a wave of needles that deal  damage."
+    },
+    {
+      "name": "Life Plant",
+      "id": 23000406,
+      "file": "spike_2.png",
+      "description": "Spike throws a large cactus with  health to give cover to teammates. If destroyed, the cactus bursts, and all nearby teammates recover  health."
+    }
+  ],
+  "rico": [
+    {
+      "name": "Multiball Launcher",
+      "id": 23000246,
+      "file": "rico_1.png",
+      "description": "Rico Deploys a vending machine that has  health - when destroyed fires bouncing projectiles in all directions."
+    },
+    {
+      "name": "Bouncy Castle",
+      "id": 23000409,
+      "file": "rico_2.png",
+      "description": "Rico fires a big bullet that, on hitting a wall or Brawler, splits into  smaller bullets."
+    }
+  ],
+  "brock": [
+    {
+      "name": "Rocket Laces",
+      "id": 23000245,
+      "file": "brock_1.png",
+      "description": "Brock jumps to targeted area, knocking back nearby enemies on takeoff and landing and dealing minor damage."
+    },
+    {
+      "name": "Rocket Fuel",
+      "id": 23000316,
+      "file": "brock_2.png",
+      "description": "Brock fires a large rocket that destroys terrain and deals damage"
+    }
+  ],
+  "bull": [
+    {
+      "name": "T-Bone Missile",
+      "id": 23000272,
+      "file": "bull_1.png",
+      "description": "Bull throws a projectile at the target Brawler, dealing  damage and healing for  if he hits."
+    },
+    {
+      "name": "Stomper",
+      "id": 23000310,
+      "file": "bull_2.png",
+      "description": "Bull stomps the ground, slowing nearby enemies. If a target is already slowed, they are stunned!"
+    }
+  ],
+  "colt": [
+    {
+      "name": "Speedloader",
+      "id": 23000273,
+      "file": "colt_1.png",
+      "description": "Colt fires two quick shots that slow targets. Deals \u00a0damage."
+    },
+    {
+      "name": "Silver Bullet",
+      "id": 23000319,
+      "file": "colt_2.png",
+      "description": "Colt fires a bullet that destroys the environment and pierces Brawlers. Deals \u00a0damage. Consumes ammo."
+    }
+  ],
+  "shelly": [
+    {
+      "name": "Fast Forward",
+      "id": 23000255,
+      "file": "shelly_1.png",
+      "description": "Shelly dashes to an aimed direction or forwards, fully reloading her ammo!"
+    },
+    {
+      "name": "Clay Pigeons",
+      "id": 23000288,
+      "file": "shelly_2.png",
+      "description": "Shelly focuses her fire to a smaller area with an increased range. Can be used \u00a0times per activation."
+    }
+  ]
+}
