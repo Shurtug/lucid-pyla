@@ -19,6 +19,18 @@ GADGET_MODE = {
     "brock": "defensive",
 }
 DEFAULT_GADGET_MODE = "offensive"
+
+# Supers that exist to BREAK contact, so they're aimed away from the enemy
+# rather than at it. Derived from the game's own super descriptions (see
+# tools/extract_brawler_data.py for the data source): each of these says in so
+# many words that the brawler leaves - "hops away", "becomes invisible",
+# "leaves the physical world" - and none of them is a melee brawler, which
+# matters because Edgar/Mico/Shade also jump but jump ONTO their target to
+# engage. Piper was previously the only entry, hardcoded.
+# Deliberately excluded after reading the full text: kenji ("gaining
+# invulnerability" is incidental to an area attack), janet ("attacks opponents
+# from above"), crow (leaps to a chosen spot - genuinely dual-use).
+ESCAPE_SUPERS = {"piper", "leon", "alli", "gray"}
 # Matches provide ~3 gadget charges and the button reads green while any
 # remain, so an unpaced offensive gadget dumps every charge in the first
 # seconds of the first fight. Space them out across the match.
@@ -662,7 +674,7 @@ else:
     if is_super_ready and persistent_data["time_since_holding_attack"] is None:
         st = brawler_info['super_type']
         led_dist = get_distance(led, player_pos)
-        if _name == "piper":
+        if _name in ESCAPE_SUPERS:
             # Escape jump only when genuinely rushed or forced defensive. The
             # trigger was `enemy_dist < panic`, but the sniper class moved
             # panic to 0.85*range (~9 tiles) - piper then burned her super on
