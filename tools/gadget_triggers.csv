@@ -1,0 +1,214 @@
+brawler,gadget,category,reason
+8bit,CHEAT CARTRIDGE,PLACEMENT,teleport to specific booster location
+8bit,EXTRA CREDITS,IN_COMBAT,fires projectiles at targets
+alli,FEED THE GATORS,IN_COMBAT,heals only if attack lands
+alli,COLD-BLOODED,IN_COMBAT,requires enemy visible
+amber,FIRE STARTERS,IN_COMBAT,mobility buff tied to ignition mechanic
+amber,DANCING FLAMES,ALWAYS,passive orbiting damage
+angelo,STINGING FLIGHT,IN_COMBAT,needs enemies to drain health
+angelo,MASTER FLETCHER,ALWAYS,next attack pierces persist
+ash,CHILL PILL,LOW_HP,heals based on rage recovery
+ash,ROTTEN BANANA,IN_COMBAT,rage trade for combat actions
+barley,STICKY SYRUP MIXER,PLACEMENT,puddle positioning matters
+barley,HERBAL TONIC,LOW_HP,heals allies
+bea,HONEY MOLASSES,PLACEMENT,beehive placement slows
+bea,RATTLED HIVE,IN_COMBAT,needs enemies for damage
+belle,NEST EGG,PLACEMENT,trap placement for area denial
+belle,REVERSE POLARITY,ALWAYS,bouncing attack persists
+berry,FRIENDSHIP IS GREAT,IN_COMBAT,needs enemies for knockback
+berry,HEALTHY ADDITIVES,ALWAYS,area duration buff persists
+bibi,VITAMIN BOOSTER,LOW_HP,heals self
+bibi,EXTRA STICKY,IN_COMBAT,needs enemies to hit
+bo,SUPER TOTEM,PLACEMENT,totem positioning
+bo,TRIPWIRE,IN_COMBAT,triggers mines against enemies
+bolt,OIL CHANGE,ALWAYS,shield from speed no waste
+bolt,BOUNCY BALL,PLACEMENT,targeted location jump
+bonnie,SUGAR RUSH,ALWAYS,pure movement speed buff
+bonnie,CRASH TEST,IN_COMBAT,needs enemies nearby
+brock,ROCKET LACES,PLACEMENT,targeted area knockback
+brock,ROCKET FUEL,IN_COMBAT,needs enemies or targets
+bull,T-BONE MISSILE,IN_COMBAT,heals only on hit
+bull,STOMPER,IN_COMBAT,needs enemies to slow
+buster,UTILITY BELT,LOW_HP,heals self and allies
+buster,SLO-MO REPLAY,IN_COMBAT,pulls enemies on next hit
+buzz,RESERVE BUOY,IN_COMBAT,trade-off needs Super usage
+buzz,X-RAY-SHADES,ALWAYS,vision buff no waste
+byron,SHOT IN THE ARM,LOW_HP,heals self
+byron,BOOSTER SHOTS,IN_COMBAT,needs enemies to hit with darts
+carl,HEAT EJECTOR,IN_COMBAT,pickaxe ignites enemies on hit
+carl,FLYING HOOK,ALWAYS,pull mechanic persists
+charlie,SPIDERS,IN_COMBAT,spiders seek enemies
+charlie,PERSONAL SPACE,LOW_HP,heals self percent health
+chester,SPICY DICE,UNCLEAR,new random Super unpredictable
+chester,CANDY BEANS,UNCLEAR,random buff outcome unclear
+chuck,REROUTING,IN_COMBAT,Super recharge combat-focused
+chuck,GHOST TRAIN,ALWAYS,wall-pass on Super persists
+clancy,SNAPPY SHOOTING,ALWAYS,token buff no waste
+clancy,TACTICAL RETREAT,ESCAPE,dash and reload escape move
+colette,NA-AH!,IN_COMBAT,projectile needs hit
+colette,GOTCHA!,IN_COMBAT,ammo use and damage needed
+colt,SPEEDLOADER,IN_COMBAT,ammo use and enemy needed
+colt,SILVER BULLET,IN_COMBAT,ammo use requires target
+cordelius,REPLANTING,ALWAYS,pure mobility no waste
+cordelius,POISON MUSHROOM,IN_COMBAT,prevents attack needs hit
+crow,INSTAPOISON,IN_COMBAT,requires poisoned enemies
+crow,SLOWING TOXIN,IN_COMBAT,kunai needs target
+damian,SPIRITUAL HEALING,PLACEMENT,teammate pickup location
+damian,WALL OF SOUND,PLACEMENT,indestructible amp positioning
+darryl,RECOILING ROTATOR,IN_COMBAT,spray needs enemies
+darryl,TAR BARREL,IN_COMBAT,slowing area needs enemies
+doug,DOUBLE SAUSAGE,LOW_HP,doubles healing for allies
+doug,EXTRA MUSTARD,IN_COMBAT,doubles damage needs enemies
+draco,UPPER CUT,ALWAYS,air throw buff persists
+draco,LAST STAND,LOW_HP,damage reduction protective
+dynamike,FIDGET SPINNER,IN_COMBAT,needs enemies for sticks
+dynamike,SATCHEL CHARGE,IN_COMBAT,stun needs enemies
+edgar,LET'S FLY,ESCAPE,grab and jump behind mobility
+edgar,HARDCORE,ESCAPE,shield emergency protection
+elprimo,SUPLEX SUPPLEMENT,IN_COMBAT,grab nearest enemy needed
+elprimo,ASTEROID BELT,IN_COMBAT,meteor needs enemies
+emz,FRIENDZONER,IN_COMBAT,hairspray needs enemies
+emz,ACID SPRAY,IN_COMBAT,needs enemies nearby
+eve,GOTTA GO!,ESCAPE,jump away mobility
+eve,MOTHERLY LOVE,LOW_HP,hatchlings heal allies
+fang,CORN-FU,IN_COMBAT,popcorn needs enemies
+fang,ROUNDHOUSE KICK,IN_COMBAT,spin stun needs enemies
+finx,BACK TO THE FINXTURE,ESCAPE,time rewind escape mechanic
+finx,NO ESCAPE,IN_COMBAT,freeze needs enemies
+frank,ACTIVE NOISE CANCELING,ESCAPE,CC immunity protective
+frank,IRRESISTIBLE ATTRACTION,IN_COMBAT,pull needs enemies
+gale,SPRING EJECTOR,PLACEMENT,bounce pad positioning
+gale,TWISTER,IN_COMBAT,tornado needs enemies
+gene,LAMP BLOWOUT,IN_COMBAT,push and heal need enemies
+gene,VENGEFUL SPIRITS,IN_COMBAT,homing needs visible enemies
+gigi,LONGER STRINGS,ALWAYS,super area passive buff
+gigi,DISAPPEARING ACT,ESCAPE,invisibility emergency
+glowy,SLIPPERY SAVIOR,ESCAPE,dash and heal mobility
+glowy,MORE LUMENS!,IN_COMBAT,tether buff needs combat
+gray,WALKING CANE,ALWAYS,pull mechanic persists
+gray,GRAND PIANO,ALWAYS,piano target persists
+griff,PIGGY BANK,IN_COMBAT,explosion needs enemies
+griff,COIN SHOWER,IN_COMBAT,coins need enemies nearby
+grom,WATCHTOWER,PLACEMENT,tower positioning for sight
+grom,RADIO CHECK,ALWAYS,rapid buds buff persists
+gus,KOOKY POPPER,IN_COMBAT,spirit explosion needs spirits
+gus,SOUL SWITCHER,IN_COMBAT,health trade for combat
+hank,WATER BALLOONS,ALWAYS,slow buff next attack
+hank,BARRICADE,LOW_HP,damage reduction protective
+jacky,PNEUMATIC BOOSTER,ALWAYS,speed burst no waste
+jacky,REBUILD,PLACEMENT,terrain rebuild positioning
+jaeyong,WEEKEND WARRIOR,IN_COMBAT,area damage needs enemies
+jaeyong,TIME FOR A SLOW SONG,IN_COMBAT,slow trail needs enemies
+janet,DROP THE BASS,PLACEMENT,speaker placement matters
+janet,BACKSTAGE PASS,ALWAYS,push mechanic persists
+jessie,SPARK PLUG,IN_COMBAT,shockwave needs enemies
+jessie,RECOIL SPRING,ALWAYS,attack speed pure buff
+juju,VOODOO CHILE,ALWAYS,element buff persists
+juju,ELEMENTALIST,ALWAYS,environment buff passive
+kaze,GRACIOUS HOST,ALWAYS,movement speed buff
+kaze,HENSOJUTSU,ESCAPE,invisibility protective
+kenji,DASHI DASH,ALWAYS,dash movement buff
+kenji,HOSOMAKI HEALING,LOW_HP,self-heal based damage
+kit,CARDBOARD BOX,ESCAPE,invisibility protective
+kit,CHEESEBURGER,LOW_HP,heals self and teammate
+larrylawrie,ORDER: SWAP,UNCLEAR,weapon swap context dependent
+larrylawrie,ORDER: FALL BACK,ESCAPE,dash toward and heal
+leon,CLONE PROJECTOR,IN_COMBAT,clone needs enemies
+leon,LOLLIPOP DROP,PLACEMENT,area hiding placement
+lightyear,TURBO BOOSTERS,ALWAYS,sprint pure mobility
+lily,VANISH,ESCAPE,shadow realm invisibility
+lily,REPOT,ALWAYS,teleport mechanic persists
+lola,FREEZE FRAME,LOW_HP,shield protective buff
+lola,STUNT DOUBLE,ESCAPE,switch and heal mobility
+lou,ICE BLOCK,ESCAPE,invulnerability protective
+lou,CRYO SYRUP,IN_COMBAT,freeze needs enemies
+lumi,HIT THE LIGHTS,IN_COMBAT,flames need enemies
+lumi,GRIM AND FROSTBITTEN,IN_COMBAT,freezing winds need enemies
+maisie,DISENGAGE!,ESCAPE,stun and dash escape move
+maisie,FINISH THEM!,IN_COMBAT,reload and damage needs enemies
+mandy,CARAMELIZE,IN_COMBAT,candy slow needs hit
+mandy,COOKIE CRUMBS,IN_COMBAT,candy pierce needs hit
+max,PHASE SHIFTER,ESCAPE,dash and immunity protective
+max,SNEAKY SNEAKERS,ESCAPE,lightning and heal escape
+meeple,MANSIONS OF MEEPLE,ALWAYS,dice tower buff persists
+meeple,RAGEQUIT,IN_COMBAT,lash needs enemies nearby
+meg,JOLTING VOLTS,LOW_HP,mecha healing protective
+meg,TOOLBOX,ESCAPE,eject escape mechanic
+melodie,PERFECT PITCH,ALWAYS,note speed orbit buff
+melodie,INTERLUDE,ALWAYS,passive shield from notes
+mico,CLIPPING SCREAM,IN_COMBAT,scream needs enemies
+mico,PRESTO,ALWAYS,jump range buff persists
+mina,WINDMILL,ESCAPE,projectile block protective
+mina,CAPO-WHAT?,IN_COMBAT,super recharge conditional hit
+moe,DODGY DIGGING,ALWAYS,super charge buff no waste
+moe,RAT RACE,IN_COMBAT,dash knockback needs enemies
+mortis,COMBO SPINNER,IN_COMBAT,spin needs enemies
+mortis,CREATURE OF THE NIGHT,ESCAPE,bat travel escape
+mrp,SERVICE BELL,IN_COMBAT,porter buff needs porter
+mrp,PORTER REINFORCEMENTS,PLACEMENT,porter spawn placement
+najia,POISON PUDDLES,IN_COMBAT,needs poisoned enemies
+najia,NAJIA JAR,PLACEMENT,vase positioning matters
+nani,WARPIN' TIME,PLACEMENT,teleport to peep location
+nani,RETURN TO SENDER,LOW_HP,damage reflection protective
+nita,BEAR PAWS,IN_COMBAT,slam stun needs enemies
+nita,FAUX FUR,LOW_HP,bear shield protective
+nori,SUSHI SNACK,LOW_HP,self heal from fish
+nori,GONNA NEED A BIGGER NET,IN_COMBAT,net root needs hit
+ollie,REGULATE,IN_COMBAT,kickflip hypnotize needs enemies
+ollie,ALL EYEZ ON ME,IN_COMBAT,hypnotize needs enemies
+otis,DORMANT STAR,PLACEMENT,starfish dormant placement
+otis,PHAT SPLATTER,PLACEMENT,ink puddle placement
+pam,PULSE MODULATOR,IN_COMBAT,turret pulse needs turret
+pam,SCRAPSUCKER,IN_COMBAT,ammo steal needs enemies
+pearl,OVERCOOKED,ALWAYS,burning cookie buff persists
+pearl,MADE WITH LOVE,LOW_HP,cookie healing allies
+penny,SALTY BARREL,PLACEMENT,barrel block placement
+penny,TRUSTY SPYGLASS,IN_COMBAT,cannon blast needs enemies
+pierce,BOTTOMLESS MAGS,ALWAYS,ammo reload shell drop
+pierce,YOU ONLY BRAWL TWICE,IN_COMBAT,shell absorption needs shells
+piper,AUTO AIMER,IN_COMBAT,defensive shot needs enemy
+piper,HOMEMADE RECIPE,ALWAYS,homing buff persists
+poco,TUNING FORK,LOW_HP,allies heal over time
+poco,PROTECTIVE TUNES,LOW_HP,removal and immunity protective
+rico,MULTIBALL LAUNCHER,PLACEMENT,vending machine placement
+rico,BOUNCY CASTLE,IN_COMBAT,split bullet needs hit
+rosa,GROW LIGHT,PLACEMENT,bush cover growth placement
+rosa,UNFRIENDLY BUSHES,IN_COMBAT,bush damage needs enemies
+rt,OUT OF LINE,ALWAYS,super charge no waste
+rt,HACKS!,IN_COMBAT,trigger marks needs enemies
+ruffs,TAKE COVER,PLACEMENT,sandbag cover placement
+ruffs,AIR SUPPORT,IN_COMBAT,barrage needs enemies
+sam,MAGNETIC FIELD,IN_COMBAT,pull needs enemies
+sam,PULSE REPELLENT,IN_COMBAT,pulse needs enemies
+sandy,SLEEP STIMULATOR,LOW_HP,full health restore
+sandy,SWEET DREAMS,IN_COMBAT,sleep needs enemies
+shade,LONGARMS,ALWAYS,range buff persists
+shade,JUMP SCARE,IN_COMBAT,spook slow needs enemies
+shelly,FAST FORWARD,ALWAYS,dash and reload no waste
+shelly,CLAY PIGEONS,IN_COMBAT,focused fire needs enemies
+sirius,A STARR IS BORN,IN_COMBAT,projectile needs hit
+sirius,MASTER OF SHADOWS,IN_COMBAT,shadow return needs summons
+spike,POPPING PINCUSHION,IN_COMBAT,needle wave needs enemies
+spike,LIFE PLANT,PLACEMENT,cactus cover placement
+sprout,GARDEN MULCHER,LOW_HP,bush consume heal
+sprout,TRANSPLANT,ALWAYS,hedge destroy super charge
+squeak,WINDUP,ALWAYS,bomb damage range buff
+squeak,RESIDUE,IN_COMBAT,residue area offensive use
+starrnova,FLOATY TIME,PLACEMENT,anti-gravity device placement
+starrnova,SHINING STARR OF FRIENDSHIP AND JUSTICE,IN_COMBAT,energy ball needs enemies
+stu,SPEED ZONE,ALWAYS,booster passive speed buff
+stu,BREAKTHROUGH,ALWAYS,super bash buff persists
+surge,POWER SURGE,ALWAYS,super charge buff no waste
+surge,POWER SHIELD,ESCAPE,damage consume protective
+tara,PSYCHIC ENHANCER,ALWAYS,vision buff no waste
+tara,SUPPORT FROM BEYOND,IN_COMBAT,shadow attacks need enemies
+tick,MINE MANIA,IN_COMBAT,mine placement needs targets
+tick,LAST HURRAH,IN_COMBAT,shield burst offensive
+trunk,FOR THE QUEEN!,IN_COMBAT,ant spread needs enemies
+trunk,WORKER ANTS,LOW_HP,damage healing protective
+wendy,WIND-POWERED,ALWAYS,platform boost mobility
+wendy,GREEN GRENADE,IN_COMBAT,grenade needs enemies
+willow,SPELLBOUND,ALWAYS,curse damage buff persists
+willow,DIVE,ESCAPE,untargetable dive defensive
+ziggy,ELECTRIC SHUFFLE,IN_COMBAT,lightning needs enemies
+ziggy,NOW YOU SEE ME...,ALWAYS,teleport buff persists

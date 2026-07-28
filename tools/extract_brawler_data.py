@@ -109,7 +109,8 @@ def build(apk_path):
           ("ItemName", "Type", "Name", "WeaponSkill", "UltimateSkill", "Hitpoints", "Speed")}
     si = {c: sh.index(c) for c in
           ("Name", "CastingRange", "RechargeTime", "MaxCharge", "Damage",
-           "Projectiles", "NumBulletsInOneAttack", "Spread", "MsBetweenAttacks")}
+           "Projectiles", "NumBulletsInOneAttack", "Spread", "MsBetweenAttacks",
+           "HoldToShoot")}
     pi = {c: ph.index(c) for c in ("Name", "Speed", "Indirect")}
 
     skills = {r[si["Name"]]: r for r in sdata if r and r[si["Name"]]}
@@ -159,6 +160,11 @@ def build(apk_path):
             "attack_spread": round(as_num(weapon[si["Spread"]])),
             "hitpoints": round(as_num(row[ci["Hitpoints"]])),
             "movement_speed": round(as_num(row[ci["Speed"]])),
+            # Continuous-fire weapon: the button is HELD to keep shooting
+            # (amber's flamethrower, gigi). Distinct from hold_attack, which is
+            # a charge-up that's held then RELEASED to fire one big shot
+            # (hank, angelo) - opposite handling, so it needs its own field.
+            "hold_to_shoot": truthy(weapon[si["HoldToShoot"]]),
         }
         if ulti:
             stats["super_range_apk"] = round(as_num(ulti[si["CastingRange"]]) * RANGE_SCALE)
@@ -186,7 +192,7 @@ def main():
     print(f"APK heroes: {len(extracted)}   config brawlers: {len(config)}")
 
     new_fields = ("reload_time", "max_ammo", "attack_damage", "bullets_per_attack",
-                  "attack_spread", "hitpoints", "movement_speed")
+                  "attack_spread", "hitpoints", "movement_speed", "hold_to_shoot")
 
     added, enriched, range_diffs, filled_speed = [], 0, [], []
     for key, stats in sorted(extracted.items()):

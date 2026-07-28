@@ -30,11 +30,41 @@ DEFAULT_GADGET_MODE = "offensive"
 # Deliberately excluded after reading the full text: kenji ("gaining
 # invulnerability" is incidental to an area attack), janet ("attacks opponents
 # from above"), crow (leaps to a chosen spot - genuinely dual-use).
-ESCAPE_SUPERS = {"piper", "leon", "alli", "gray"}
+ESCAPE_SUPERS = {"piper", "gray"}
+
+# Invisibility supers are dual-use: they break contact when you're losing, but
+# they're also the setup for a kill. Numbers below are the game's own
+# (status_effects_logic / skills.csv), converted from its 20-ticks-per-second
+# clock:
+#   leon - 6.0s invisible, BreakInvisibilityOnAttack: sneak in, then the first
+#          shot reveals him, so it's an approach tool.
+#   alli - 7.0s stealth flagged attacks_dont_reveal, so she can fight the whole
+#          time, PLUS a one-shot damage boost worth 25% of the target's CURRENT
+#          health. That scaling means it's worth most against a HEALTHY target -
+#          the opposite of saving it to finish someone off.
+INVIS_SUPERS = {
+    "leon": {"duration": 6.0, "attacks_reveal": True,  "engage_hp": 0.0},
+    "alli": {"duration": 7.0, "attacks_reveal": False, "engage_hp": 0.55},
+}
+# Don't burn it on a target that's already nearly dead (alli's boost scales
+# with their remaining health) or from so far away that it expires on approach.
+INVIS_ENGAGE_MAX_RANGE = 1.6    # x attack_range: worth closing from this far
+INVIS_ENGAGE_MIN_RANGE = 0.25   # already on top of them - no approach needed
 # Matches provide ~3 gadget charges and the button reads green while any
 # remain, so an unpaced offensive gadget dumps every charge in the first
 # seconds of the first fight. Space them out across the match.
 GADGET_OFFENSIVE_GAP = 8.0
+
+# Brawlers whose gadgets are pure upside the moment they're ready - no enemy
+# required, nothing wasted, and the effect persists until it's used (e.g. a
+# homing/next-attack buff). Classified from the game's own gadget descriptions.
+#
+# The list is short on purpose: the bot cannot see WHICH of a brawler's two
+# gadgets is equipped, so firing on cooldown is only safe when EVERY gadget
+# that brawler owns qualifies. 37 more brawlers have one qualifying gadget and
+# one that needs a target - those stay on the normal in-combat trigger, because
+# guessing wrong wastes the charge.
+GADGET_ALWAYS = {"gray", "juju", "melodie", "stu"}
 
 
 LOG = True    # decision logging (throttled)
@@ -76,6 +106,22 @@ persistent_data.setdefault("ammo_model", None)
 persistent_data.setdefault("ammo_model_t", 0.0)
 
 must_hold = must_brawler_hold_attack(_orig_name, brawlers_info)
+# Continuous-fire weapons hold the button down instead of tapping it. Distinct
+# from must_hold, which is a charge-up that's held then RELEASED to fire.
+hold_to_shoot = bool(brawler_info.get("hold_to_shoot"))
+persistent_data.setdefault("hts_holding", False)
+persistent_data.setdefault("stealth_until", 0.0)
+
+
+def release_stream():
+    """Let go of a held continuous-fire button. Safe to call any time; the
+    button must never be left down when we stop having a target, or the
+    brawler keeps firing at nothing (and burns the magazine)."""
+    if persistent_data.get("hts_holding"):
+        attack(touch_up=True, touch_down=False)
+        persistent_data["hts_holding"] = False
+        return True
+    return False
 gmode = GADGET_MODE.get(_name, DEFAULT_GADGET_MODE)
 safe_range, attack_range, super_range = get_brawler_range(_name)
 player_pos = get_entity_pos(player_data)
@@ -340,6 +386,8 @@ if _now - persistent_data.get("_last_tick_t", 0.0) > 8.0:
     persistent_data["_gas_seen"] = False
     persistent_data["_mate_ticks"] = 0
     persistent_data["ammo_model"] = None      # new match -> magazine starts full
+    persistent_data["hts_holding"] = False    # ...and no button is held
+    persistent_data["stealth_until"] = 0.0    # ...and no stealth is running
     persistent_data["last_vanished_enemy"] = None
     persistent_data["last_mate"] = None
 persistent_data["_last_tick_t"] = _now
@@ -472,6 +520,15 @@ if must_hold and persistent_data["time_since_holding_attack"] is not None:
         attack(touch_up=True, touch_down=False)
         persistent_data["time_since_holding_attack"] = None
 
+# Fire-and-forget gadgets: no target needed, so they don't wait for the combat
+# tree. Still paced so a multi-charge budget isn't dumped at once.
+if (_name in GADGET_ALWAYS and is_gadget_ready and gmode != "off"
+        and persistent_data["time_since_holding_attack"] is None
+        and _now - persistent_data["last_gadget"] > GADGET_OFFENSIVE_GAP):
+    use_gadget()
+    persistent_data["last_gadget"] = _now
+    _acts.append("gadget-always")
+
 enemy_coords, enemy_dist = (None, None)
 if is_there_enemy(enemy_data):
     enemy_coords, enemy_dist = find_closest_enemy(enemy_data, player_pos, walls, "attack")
@@ -481,6 +538,8 @@ if is_there_enemy(enemy_data):
 led = None
 if enemy_coords is None:
     persistent_data["zone_mode"] = None   # hysteresis resets between engagements
+    if release_stream():                  # nothing to shoot at - stop the stream
+        _acts.append("stream-")
     if gas:
         movement, _zone = gas, "gas"
     else:
@@ -523,7 +582,19 @@ else:
     in_bush = any(b[0] <= player_pos[0] <= b[2] and b[1] <= player_pos[1] <= b[3] for b in bushes)
     melee_commit = is_melee and enemy_dist is not None and enemy_dist <= TILE_SIZE * 3.0 and not in_bush
 
-    if is_melee and (mate_pushing or melee_commit):
+    # Stealth that survives attacking (alli) turns the whole fight around: she
+    # can stand in their face and keep shooting without being seen, so kiting
+    # away during it wastes the window. Leon's stealth breaks the moment he
+    # fires, so he gets no aggression bonus - only the approach.
+    _iv_self = INVIS_SUPERS.get(_name)
+    stealthed = time.time() < persistent_data.get("stealth_until", 0.0)
+    stealth_aggro = bool(stealthed and _iv_self and not _iv_self["attacks_reveal"])
+
+    if stealth_aggro:
+        is_defensive = False
+        panic = 0
+        _acts.append("stealth-push")
+    elif is_melee and (mate_pushing or melee_commit):
         is_defensive = False
         panic = 0
         _acts.append("melee-push" if mate_pushing else "melee-commit")
@@ -685,6 +756,29 @@ else:
                 esc_target = (player_pos[0] + away_vec[0], player_pos[1] + away_vec[1])
                 use_super(aim=esc_target)
                 _acts.append("super-def")
+        elif _name in INVIS_SUPERS:
+            # Invisibility: used BOTH ways. Defensively it's the escape button;
+            # offensively it's the opener - go unseen, close the gap, and (for
+            # alli) cash in the current-health damage boost.
+            _iv = INVIS_SUPERS[_name]
+            rushed = enemy_dist is not None and enemy_dist < attack_range * 0.4
+            if rushed or is_defensive:
+                away_vec = away(ex, ey)
+                use_super(aim=(player_pos[0] + away_vec[0], player_pos[1] + away_vec[1]))
+                persistent_data["stealth_until"] = time.time() + _iv["duration"]
+                _acts.append("super-invis-def")
+            elif enemy_dist is not None and \
+                    attack_range * INVIS_ENGAGE_MIN_RANGE <= enemy_dist <= attack_range * INVIS_ENGAGE_MAX_RANGE:
+                # Offensive opener. Only worth it if the target still has enough
+                # health to be worth the setup - for alli the bonus damage IS a
+                # fraction of their current health, so a nearly-dead target
+                # wastes it. Enemy HP isn't readable, so our own confident HP
+                # reading stands in for "this is a real fight, not a mop-up".
+                worth_it = _iv["engage_hp"] <= 0.0 or not hp_usable or hp_pct >= _iv["engage_hp"]
+                if worth_it:
+                    use_super(aim=(ex, ey))
+                    persistent_data["stealth_until"] = time.time() + _iv["duration"]
+                    _acts.append("super-invis-eng")
         else:
             # Multi-target aim + fringe gate (idea from universal_smart): among
             # predicted enemy positions in super_range with clear super LOS, aim
@@ -779,7 +873,19 @@ else:
             use_gadget()
             persistent_data["last_gadget"] = time.time()
             _acts.append("gadget")
-        if not must_hold:
+        if hold_to_shoot:
+            # Continuous-fire weapon (amber's flamethrower, gigi): the button is
+            # HELD to keep the stream going. Tapping it once per tick - what the
+            # generic path does - restarts the weapon every frame and throws away
+            # most of the uptime. Press once, keep holding while a target is
+            # live, and release in the no-target branch below.
+            if not persistent_data["hts_holding"]:
+                attack(touch_up=False, touch_down=True)
+                persistent_data["hts_holding"] = True
+                _acts.append("stream+")
+            else:
+                _acts.append("stream")
+        elif not must_hold:
             if use_autoaim:
                 attack()  # Trigger autoaim
                 _acts.append("atk-auto")
@@ -800,6 +906,11 @@ else:
             attack(touch_up=True, touch_down=False)
             persistent_data["time_since_holding_attack"] = None
             _acts.append("hold-")
+    elif release_stream():
+        # An enemy is visible but there's no shootable target this tick (out of
+        # range, or no line of sight) - stop streaming rather than burn the
+        # magazine into a wall.
+        _acts.append("stream-")
 # Teammate hiding logic - join a coordinated bush ambush, but ONLY out of
 # combat: this used to run unconditionally after the combat tree, so with an
 # enemy actively engaging (kite/cover/peel already decided) the bot would
