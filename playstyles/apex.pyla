@@ -50,6 +50,19 @@ persistent_data.setdefault("low_hp_streak", 0)
 persistent_data.setdefault("empty_streak", 0)
 persistent_data.setdefault("last_attack_t", 0.0)
 
+# --- modelled ammo ----------------------------------------------------------
+# reload_time/max_ammo come from the game client's own data (see
+# tools/extract_brawler_data.py). Before that existed the config had no reload
+# or capacity numbers at all, so ammo could only be read from the HP-bar
+# vision - and that reading needs the segment layout learned from a full,
+# unclipped bar, which for many brawlers never happens mid-match.
+# The model fills those gaps: start full, decrement on each shot, regenerate
+# one round per reload_time. It's a dead-reckoning estimate, so wherever the
+# vision DOES give a confident exact segment count that wins and the model
+# resyncs to it.
+persistent_data.setdefault("ammo_model", None)
+persistent_data.setdefault("ammo_model_t", 0.0)
+
 must_hold = must_brawler_hold_attack(_orig_name, brawlers_info)
 gmode = GADGET_MODE.get(_name, DEFAULT_GADGET_MODE)
 safe_range, attack_range, super_range = get_brawler_range(_name)
@@ -77,6 +90,14 @@ movement = (0, 0)
 _zone = "none"
 _acts = []
 
+
+def _as_num(value, default=0.0):
+    # brawlers_info values are usually numbers but can be absent or blank for
+    # a brawler the extractor couldn't fill; never let that raise mid-tick.
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
 
 def blocked(m):
     return is_path_blocked(player_data, m, walls)
@@ -306,6 +327,7 @@ if _now - persistent_data.get("_last_tick_t", 0.0) > 8.0:
     persistent_data["empty_streak"] = 0
     persistent_data["_gas_seen"] = False
     persistent_data["_mate_ticks"] = 0
+    persistent_data["ammo_model"] = None      # new match -> magazine starts full
     persistent_data["last_vanished_enemy"] = None
     persistent_data["last_mate"] = None
 persistent_data["_last_tick_t"] = _now
@@ -345,6 +367,28 @@ elif game_mode == "team_showdown":
     def_hp_eff = max(def_hp_eff, 0.45)
     mode_chase_cap = 1.25
 
+# ---- per-brawler scaling from the game's real stats ------------------------
+# hitpoints and movement_speed come from the client's own data (400f935).
+# Measured across all 106 brawlers: HP spans 2000-6800 (median 3700) and speed
+# sits on discrete tiers with 720 as the baseline (55 brawlers), 770/820 above
+# it and a handful of slow ones down at 540.
+#
+# Tankiness: the HP bar only reports a PERCENTAGE, so an identical "40% left"
+# means ~800 HP on Wendy but ~2720 on Frank. Scaling the retreat threshold by
+# the inverse of relative HP makes the trigger track absolute survivability -
+# squishy brawlers pull out earlier, tanky ones can keep brawling. Square-rooted
+# so it's a nudge rather than a swing, and clamped to a sane band.
+MEDIAN_HP = 3700.0
+BASE_SPEED = 720.0
+_hp_max = _as_num(brawler_info.get("hitpoints"), MEDIAN_HP) or MEDIAN_HP
+tankiness = _hp_max / MEDIAN_HP
+def_hp_eff = min(0.65, max(0.20, def_hp_eff * (1.0 / tankiness) ** 0.5))
+
+# Mobility: a brawler that can't outpace anything shouldn't try to hold a wide
+# kite band (it just eats damage while backpedalling); a fast one can. Applied
+# as a small multiplier on the panic distance further down.
+mobility = min(1.15, max(0.85, _as_num(brawler_info.get("movement_speed"), BASE_SPEED) / BASE_SPEED))
+
 
 # ---- HP / ammo reliability gate -------------------------------------------
 # Both signals come from computer vision on the bars above the player
@@ -373,8 +417,34 @@ ammo_segs = persistent_data.get("current_ammo_segments")
 ammo_conf = persistent_data.get("ammo_confidence", 0.0)
 ammo_fresh = _now - persistent_data.get("ammo_updated_at", 0) <= AMMO_FRESH_SEC
 fired_recently = _now - persistent_data.get("last_attack_t", 0.0) <= FIRED_RECENTLY_SEC
-seg_empty = ammo_segs is not None and ammo_conf >= 0.85 and ammo_fresh and ammo_segs == 0
-if seg_empty and fired_recently:
+vision_exact = ammo_segs is not None and ammo_conf >= 0.85 and ammo_fresh
+
+# Regenerate the modelled magazine, then let a confident vision reading
+# override it (vision is ground truth; the model is only dead reckoning).
+max_ammo = _as_num(brawler_info.get("max_ammo"), 3) or 3
+reload_time = _as_num(brawler_info.get("reload_time"), 0.0)
+if persistent_data["ammo_model"] is None:
+    persistent_data["ammo_model"] = float(max_ammo)
+    persistent_data["ammo_model_t"] = _now
+elif reload_time > 0:
+    elapsed = _now - persistent_data["ammo_model_t"]
+    if elapsed > 0:
+        persistent_data["ammo_model"] = min(
+            float(max_ammo), persistent_data["ammo_model"] + elapsed / reload_time)
+persistent_data["ammo_model_t"] = _now
+if vision_exact:
+    persistent_data["ammo_model"] = float(ammo_segs)
+
+# Out of ammo: prefer the vision count when it's trustworthy, otherwise trust
+# the model - but only once we've actually been firing, since a full magazine
+# sitting idle can't be empty and a stale/garbled reading shouldn't strand the
+# bot in retreat. reload_time == 0 means no usable data, so the model is
+# skipped entirely for that brawler rather than guessing.
+if vision_exact:
+    empty_now = ammo_segs == 0
+else:
+    empty_now = reload_time > 0 and persistent_data["ammo_model"] < 1.0
+if empty_now and fired_recently:
     persistent_data["empty_streak"] = persistent_data.get("empty_streak", 0) + 1
 else:
     persistent_data["empty_streak"] = 0
@@ -412,6 +482,8 @@ if enemy_coords is None:
         if blind_dist <= attack_range and is_enemy_hittable(player_pos, blind_pos, walls, "attack"):
             if persistent_data.get("time_since_holding_attack") is None:
                 persistent_data["last_attack_t"] = time.time()
+                if persistent_data.get("ammo_model") is not None:
+                    persistent_data["ammo_model"] = max(0.0, persistent_data["ammo_model"] - 1.0)
                 if is_thrower:
                     bdx = blind_pos[0] - player_pos[0]
                     bdy = blind_pos[1] - player_pos[1]
@@ -457,6 +529,11 @@ else:
             panic = max(safe_range * CFG["kite_mult"], attack_range * 0.35)
         else:  # melee (safe_range is 0 -> no distance panic, commit) / ranged
             panic = safe_range * CFG["kite_mult"]
+        # Kiting only works if you can actually keep the gap. Scale the
+        # back-off distance by real movement speed for the classes whose plan
+        # is to stay away; melee/bruiser want contact, so leave them alone.
+        if cls in ("sniper", "ranged", "thrower"):
+            panic *= mobility
         if is_defensive:
             panic = max(panic, attack_range * 1.0)
 
@@ -670,8 +747,12 @@ else:
     if use_autoaim or aim_target is not None:
         # We have a valid target and are about to fire: stamp the fire time so
         # the ammo reliability gate can tell a real "empty" from a vision misread
-        # (ammo regenerates while idle, so "empty" without recent fire is noise).
+        # (ammo regenerates while idle, so "empty" without recent fire is noise),
+        # and spend a round from the modelled magazine. A confident vision
+        # reading resyncs the model next tick, so drift can't accumulate.
         persistent_data["last_attack_t"] = time.time()
+        if persistent_data.get("ammo_model") is not None:
+            persistent_data["ammo_model"] = max(0.0, persistent_data["ammo_model"] - 1.0)
         if (gmode == "offensive" and is_gadget_ready and persistent_data["time_since_holding_attack"] is None
                 and time.time() - persistent_data["last_gadget"] > GADGET_OFFENSIVE_GAP):
             # Being inside this block already means a valid, hittable target
