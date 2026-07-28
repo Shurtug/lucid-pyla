@@ -53,51 +53,51 @@ def button_crop(frame):
     return frame[int(y1 * sy):int(y2 * sy), int(x1 * sx):int(x2 * sx)]
 
 
+def _normalise(mask):
+    """Binary mask -> fixed-size square, cropped to its own bounding box so
+    two silhouettes are compared on shape rather than on how much padding
+    each happens to carry."""
+    ys, xs = np.where(mask > 0)
+    if len(ys) < 20:
+        return None
+    mask = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    return (cv2.resize(mask, (NORM, NORM), interpolation=cv2.INTER_AREA) > 60).astype(np.uint8)
+
+
 def prep_icon(path):
-    """Reference PNG -> normalised BGR + a mask of its non-transparent art."""
+    """Reference PNG -> normalised silhouette (its alpha channel)."""
     img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if img is None:
-        return None, None
-    if img.shape[2] == 4:
-        alpha = img[:, :, 3]
-        bgr = img[:, :, :3]
-    else:
-        alpha = np.full(img.shape[:2], 255, np.uint8)
-        bgr = img
-    # trim transparent padding so scale is comparable between icons
-    ys, xs = np.where(alpha > 40)
-    if len(ys):
-        bgr = bgr[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-        alpha = alpha[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-    bgr = cv2.resize(bgr, (NORM, NORM), interpolation=cv2.INTER_AREA)
-    alpha = cv2.resize(alpha, (NORM, NORM), interpolation=cv2.INTER_AREA)
-    return bgr, alpha
+        return None
+    alpha = img[:, :, 3] if img.shape[2] == 4 else np.full(img.shape[:2], 255, np.uint8)
+    return _normalise((alpha > 60).astype(np.uint8) * 255)
 
 
 def prep_button(crop):
-    """Button crop -> normalised BGR, centre-cropped to drop the frame ring."""
+    """Button crop -> normalised silhouette of the gadget art.
+
+    Both the button face and the artwork on it are green, so colour can't
+    separate them - measured on a live frame the two form a clean bimodal
+    split in VALUE, with the art the BRIGHTER of the two. The outer fifth is
+    dropped first to shed the circular frame and the charge ring.
+    """
     h, w = crop.shape[:2]
-    m = int(min(h, w) * 0.18)          # shave the circular border
+    m = int(min(h, w) * 0.20)
     inner = crop[m:h - m, m:w - m] if h > 2 * m and w > 2 * m else crop
-    return cv2.resize(inner, (NORM, NORM), interpolation=cv2.INTER_AREA)
+    hsv = cv2.cvtColor(inner, cv2.COLOR_BGR2HSV)
+    hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    art = ((hue > 35) & (hue < 90) & (sat > 60) & (val >= 110)).astype(np.uint8) * 255
+    art = cv2.morphologyEx(art, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    return _normalise(art)
 
 
-def score(button, icon_bgr, icon_alpha):
-    """Similarity in 0..1. Hue histogram over the icon's opaque pixels - the
-    button tints and scales the art, so colour distribution survives that far
-    better than raw pixel correlation."""
-    mask = (icon_alpha > 60).astype(np.uint8) * 255
-    b_hsv = cv2.cvtColor(button, cv2.COLOR_BGR2HSV)
-    i_hsv = cv2.cvtColor(icon_bgr, cv2.COLOR_BGR2HSV)
-    hb = cv2.calcHist([b_hsv], [0, 1], mask, [24, 8], [0, 180, 0, 256])
-    hi = cv2.calcHist([i_hsv], [0, 1], mask, [24, 8], [0, 180, 0, 256])
-    cv2.normalize(hb, hb, 0, 1, cv2.NORM_MINMAX)
-    cv2.normalize(hi, hi, 0, 1, cv2.NORM_MINMAX)
-    hist = float(cv2.compareHist(hb, hi, cv2.HISTCMP_CORREL))
-    # plus a masked template correlation for shape agreement
-    res = cv2.matchTemplate(button, icon_bgr, cv2.TM_CCOEFF_NORMED, mask=mask)
-    tmpl = float(res.max()) if np.isfinite(res).any() else 0.0
-    return max(0.0, 0.6 * hist + 0.4 * tmpl)
+def score(button_mask, icon_mask):
+    """Silhouette agreement as intersection-over-union, 0..1."""
+    if button_mask is None or icon_mask is None:
+        return 0.0
+    inter = np.logical_and(button_mask, icon_mask).sum()
+    union = np.logical_or(button_mask, icon_mask).sum()
+    return float(inter / union) if union else 0.0
 
 
 def identify(frame, brawler, save_crop=None):
@@ -113,13 +113,15 @@ def identify(frame, brawler, save_crop=None):
     if save_crop:
         cv2.imwrite(str(save_crop), crop)
     button = prep_button(crop)
+    if button is None:
+        return None, "no gadget artwork found in the button - is one visible/ready?"
 
     results = []
     for e in entries:
-        bgr, alpha = prep_icon(ICON_DIR / e["file"])
-        if bgr is None:
+        icon = prep_icon(ICON_DIR / e["file"])
+        if icon is None:
             continue
-        results.append((score(button, bgr, alpha), e))
+        results.append((score(button, icon), e))
     if not results:
         return None, "reference icons missing on disk - run fetch_gadget_icons.py"
     results.sort(key=lambda r: -r[0])
