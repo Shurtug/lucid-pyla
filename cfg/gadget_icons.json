@@ -1,27 +1,15 @@
 {
   "bolt": [
     {
-      "name": "Rocket Laces",
-      "id": 23000245,
-      "file": "bolt_1.png",
-      "description": "Brock jumps to targeted area, knocking back nearby enemies on takeoff and landing and dealing minor damage."
-    },
-    {
-      "name": "Rocket Fuel",
-      "id": 23000316,
-      "file": "bolt_2.png",
-      "description": "Brock fires a large rocket that destroys terrain and deals damage"
-    },
-    {
       "name": "Oil Change",
       "id": 23001281,
-      "file": "bolt_3.png",
+      "file": "bolt_1.png",
       "description": "Bolt gains a x - x health shield based on his current speed."
     },
     {
       "name": "Bouncy Ball",
       "id": 23001282,
-      "file": "bolt_4.png",
+      "file": "bolt_2.png",
       "description": "Bolt jumps to a target location and deals area damage. Breaks environments but loses all speed when landing."
     }
   ],

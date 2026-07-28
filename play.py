@@ -14,6 +14,7 @@ except ImportError:
     early_access = False
     def add_advanced_visuals(a, b):
         return None
+import gadget_detect
 from state_finder import get_state
 from utils import load_toml_as_dict, count_hsv_pixels, load_brawlers_info, interpret_pyla_code, \
     count_mask_pixels, JOYSTICK_RADIUS, clamp, config_bool, load_pyla_script, resolve_project_path
@@ -210,6 +211,13 @@ class Play:
         self._detect_executor = ThreadPoolExecutor(max_workers=1) if self.pipeline_inference else None
         self._pending_detection = None  # (frame, future) awaiting processing
         self._pending_tiles = None      # future for an in-flight tile/wall inference
+        # Equipped-gadget identification (see gadget_detect). Resolved once per
+        # brawler from the gadget button, then reused - it can't change mid-match.
+        self.equipped_gadget = None
+        self.gadget_trigger = None
+        self._gadget_id_brawler = None
+        self._gadget_id_attempts = 0
+        self._gadget_id_last_try = 0.0
 
     @staticmethod
     def get_entity_pos(entity):
@@ -915,6 +923,11 @@ class Play:
                 'brawlers_info': self.brawlers_info,
                 'must_brawler_hold_attack': self.must_brawler_hold_attack,
                 'is_gadget_ready': self.is_gadget_ready,
+                # Which gadget is actually equipped, read off the button, and
+                # when it's worth firing. None until identified (or when it
+                # can't be told apart) - playstyles must handle that.
+                'equipped_gadget': self.equipped_gadget,
+                'gadget_trigger': self.gadget_trigger,
                 'is_hypercharge_ready': self.is_hypercharge_ready,
                 'is_super_ready': self.is_super_ready,
                 'TILE_SIZE': self.TILE_SIZE*self.window_controller.scale_factor,
@@ -970,6 +983,49 @@ class Play:
             self.last_movement_change_time = current_time
         movement = self.unstuck_movement_if_needed(movement, current_time)
         return movement
+
+    def identify_equipped_gadget(self, frame):
+        """Resolve which gadget is equipped from the gadget button.
+
+        Runs at most a handful of times per brawler, not per tick: the answer
+        can't change mid-match, and the silhouette match is real CV work. Needs
+        the button visible and lit, so early attempts often fail (dead, menu,
+        gadget already spent) - hence the retries. Gives up quietly after
+        MAX_ATTEMPTS and leaves equipped_gadget None, which every caller treats
+        as "carry on as before".
+        """
+        MAX_ATTEMPTS = 12
+        RETRY_DELAY = 1.5
+
+        brawler = self.current_brawler
+        if not brawler:
+            return
+        if brawler != self._gadget_id_brawler:      # new brawler -> start over
+            self._gadget_id_brawler = brawler
+            self._gadget_id_attempts = 0
+            self.equipped_gadget = None
+            self.gadget_trigger = None
+        if self.equipped_gadget is not None or self._gadget_id_attempts >= MAX_ATTEMPTS:
+            return
+        now = time.time()
+        if now - self._gadget_id_last_try < RETRY_DELAY:
+            return
+        self._gadget_id_last_try = now
+        self._gadget_id_attempts += 1
+
+        try:
+            bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)   # scrcpy frames are RGB
+            result = gadget_detect.identify(bgr, brawler)
+        except Exception as exc:
+            print(f"Gadget identification failed: {exc}")
+            self._gadget_id_attempts = MAX_ATTEMPTS       # don't retry a hard error
+            return
+        if result:
+            name, category, score, margin = result
+            self.equipped_gadget = name
+            self.gadget_trigger = category
+            print(f"Equipped gadget: {name} -> {category} "
+                  f"(match {score:.2f}, margin {margin:.2f})")
 
     def update_player_hp(self, frame, player_data):
         """Track player HP and ammo from the bars above the player.
@@ -1393,6 +1449,7 @@ class Play:
                 data = None
             else:
                 self.update_player_hp(frame, data.get("player"))
+                self.identify_equipped_gadget(frame)
 
         if not data:
             if current_time - self.time_since_player_last_found > 1.0:

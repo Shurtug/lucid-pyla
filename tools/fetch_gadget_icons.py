@@ -64,10 +64,25 @@ def main():
     if (PROJECT_ROOT / "cfg" / "brawlers_info.json").exists():
         known = json.loads((PROJECT_ROOT / "cfg" / "brawlers_info.json").read_text(encoding="utf-8"))
 
+    # Upstream data bug: a few entries carry another brawler's gadgets (Bolt
+    # lists Brock's two alongside its own, giving it 4). A gadget id that shows
+    # up under more than one brawler belongs to whichever one its description
+    # actually names - Brawlify descriptions consistently start with the owner.
+    seen = {}
+    for b in brawlers:
+        for g in b.get("gadgets") or []:
+            seen.setdefault(g["id"], []).append(b.get("name", ""))
+    contested = {gid for gid, owners in seen.items() if len(owners) > 1}
+
     index, downloaded, skipped, failed, unmatched = {}, 0, 0, 0, []
     for b in brawlers:
-        key = norm_key(b.get("name", ""))
+        display = b.get("name", "")
+        key = norm_key(display)
         gadgets = b.get("gadgets") or []
+        if contested:
+            gadgets = [g for g in gadgets
+                       if g["id"] not in contested
+                       or display.lower() in (g.get("description", "") or "").lower()]
         if not gadgets:
             continue
         if known and key not in known:

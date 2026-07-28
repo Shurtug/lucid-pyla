@@ -66,6 +66,18 @@ GADGET_OFFENSIVE_GAP = 8.0
 # guessing wrong wastes the charge.
 GADGET_ALWAYS = {"gray", "juju", "melodie", "stu"}
 
+# When the engine has identified the equipped gadget from the button (see
+# gadget_detect.py), gadget_trigger says what it actually does, and the choice
+# stops being a guess:
+#   ALWAYS    - pure upside on cooldown, no target needed
+#   IN_COMBAT - needs a real target; fire alongside an attack
+#   LOW_HP    - a heal/shield: wasted at full health, save it
+#   ESCAPE    - emergency mobility: save it until genuinely threatened
+#   PLACEMENT - position matters and we can't judge that; treat as in-combat
+# Without an identification these stay unused and the per-brawler defaults
+# above apply, so behaviour is unchanged for anything not recognised.
+GADGET_LOW_HP_AT = 0.55     # fire a heal/shield gadget below this HP fraction
+
 
 LOG = True    # decision logging (throttled)
 
@@ -520,11 +532,28 @@ if must_hold and persistent_data["time_since_holding_attack"] is not None:
         attack(touch_up=True, touch_down=False)
         persistent_data["time_since_holding_attack"] = None
 
-# Fire-and-forget gadgets: no target needed, so they don't wait for the combat
-# tree. Still paced so a multi-charge budget isn't dumped at once.
-if (_name in GADGET_ALWAYS and is_gadget_ready and gmode != "off"
-        and persistent_data["time_since_holding_attack"] is None
-        and _now - persistent_data["last_gadget"] > GADGET_OFFENSIVE_GAP):
+# --- gadget: fire it when THIS gadget is actually worth firing ---------------
+# gadget_trigger is set by the engine once it has identified the equipped
+# gadget from the button; it's None when unidentified, in which case the
+# per-brawler GADGET_ALWAYS list is the fallback.
+_trigger = globals().get("gadget_trigger")
+_gadget_free = (is_gadget_ready and gmode != "off"
+                and persistent_data["time_since_holding_attack"] is None
+                and _now - persistent_data["last_gadget"] > GADGET_OFFENSIVE_GAP)
+
+if _gadget_free and _trigger == "ALWAYS":
+    # No target needed - press it the moment it's off cooldown.
+    use_gadget()
+    persistent_data["last_gadget"] = _now
+    _acts.append("gadget-always")
+elif _gadget_free and _trigger == "LOW_HP" and hp_defensive:
+    # A heal or shield: worthless at full health, so it waits for real damage
+    # (hp_defensive is the confidence-gated low-HP signal, not a raw reading).
+    use_gadget()
+    persistent_data["last_gadget"] = _now
+    _acts.append("gadget-heal")
+elif _gadget_free and _trigger is None and _name in GADGET_ALWAYS:
+    # Unidentified, but this brawler's gadgets ALL qualify, so it's safe anyway.
     use_gadget()
     persistent_data["last_gadget"] = _now
     _acts.append("gadget-always")
@@ -687,7 +716,12 @@ else:
         else:
             reason = f"[DIST:{predicted_dist:.0f}<{panic_eff:.0f}]"
             
-        if gmode == "defensive" and is_gadget_ready and time.time() - persistent_data["last_gadget"] > 3.0 and predicted_dist < max(350, panic * 0.5):
+        # An identified ESCAPE gadget belongs here regardless of the per-brawler
+        # gmode guess - this branch only runs when we're rushed or defensive,
+        # which is exactly what an escape gadget is for.
+        _escape_gadget = (_trigger == "ESCAPE" and is_gadget_ready
+                          and time.time() - persistent_data["last_gadget"] > 3.0)
+        if _escape_gadget or (gmode == "defensive" and is_gadget_ready and time.time() - persistent_data["last_gadget"] > 3.0 and predicted_dist < max(350, panic * 0.5)):
             movement = away_from_enemies(enemy_data, panic * 1.5, ex, ey)
             _zone = f"kite-gadget{reason}"
             use_gadget()
@@ -859,7 +893,12 @@ else:
         persistent_data["last_attack_t"] = time.time()
         if persistent_data.get("ammo_model") is not None:
             persistent_data["ammo_model"] = max(0.0, persistent_data["ammo_model"] - 1.0)
-        if (gmode == "offensive" and is_gadget_ready and persistent_data["time_since_holding_attack"] is None
+        # Fire alongside a real shot. When the gadget has been identified, only
+        # the categories that actually want a target come through here -
+        # heals/escapes are handled by their own triggers above, so they're no
+        # longer burned on a random poke.
+        _wants_target = _trigger in ("IN_COMBAT", "PLACEMENT", "UNCLEAR") if _trigger else (gmode == "offensive")
+        if (_wants_target and is_gadget_ready and persistent_data["time_since_holding_attack"] is None
                 and time.time() - persistent_data["last_gadget"] > GADGET_OFFENSIVE_GAP):
             # Being inside this block already means a valid, hittable target
             # was found (use_autoaim or aim_target) - that's the "not a wasted
