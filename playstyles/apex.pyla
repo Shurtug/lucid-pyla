@@ -179,8 +179,25 @@ def first_open(cands, fallback):
     return fallback
 
 def toward(px, py):
+    """Head for (px, py), routing around walls, at FULL joystick deflection.
+
+    find_path returns up to three look-ahead steps as raw offsets to cell
+    centres, so its first step is only ever ~one 35px cell away - about 43 of
+    the 75 the joystick can take. Feeding that straight to the engine moved the
+    bot at roughly 58% speed while away()/retreats use raw deltas that saturate
+    at full speed, which is why following a teammate always fell behind.
+    Taking the furthest look-ahead also gives a straighter heading: the nearest
+    step is axis-snapped to the neighbouring cell, so a diagonal target came out
+    as "straight right" until the next tick.
+    """
     path = find_path(player_pos, (px, py), walls)
-    return path[0] if path else (0, 0)
+    vx, vy = path[-1] if path else (px - player_pos[0], py - player_pos[1])
+    if vx == 0 and vy == 0:
+        vx, vy = px - player_pos[0], py - player_pos[1]
+    length = math.hypot(vx, vy)
+    if length < 1e-6:
+        return (0, 0)
+    return (vx / length * JOYSTICK_RADIUS, vy / length * JOYSTICK_RADIUS)
 
 def away(px, py):
     dx = player_pos[0] - px
@@ -263,39 +280,47 @@ def get_cover_vector(enemies_data, is_thrower, is_defensive, attack_range):
     return first_open([(best_dir[0], best_dir[1]), (best_dir[0], 0), (0, best_dir[1])], best_dir) if best_dir else None
 
 def wander():
-    # Follow the nearest teammate. Detection flickers frame-to-frame, so remember the
-    # last-seen teammate for 1.5s and keep following it (fixes "wanders off for no reason").
+    # Follow the nearest teammate. Detection flickers frame-to-frame (a mate
+    # behind a wall or in a bush drops out for a while), so a remembered mate
+    # stays followable for MATE_MEMORY - 1.5s was short enough that a normal
+    # occlusion made the bot forget its team and wander off alone.
+    MATE_MEMORY = 3.5
+    ESCORT_DIST = TILE_SIZE * 1.5     # close enough; hold position
+    ISOLATED_DIST = TILE_SIZE * 7.0   # beyond this we're out of support range
+
     mate, d = find_closest_teammate(teammate_data, player_pos, walls)
     if mate is not None:
         persistent_data["last_mate"] = mate
         persistent_data["last_mate_t"] = time.time()
         persistent_data["last_seen_mate_pos"] = mate
         persistent_data["last_seen_mate_t"] = time.time()
-    elif time.time() - persistent_data.get("last_mate_t", 0.0) < 1.5:
+    elif time.time() - persistent_data.get("last_mate_t", 0.0) < MATE_MEMORY:
         mate = persistent_data.get("last_mate")
         d = get_distance(mate, player_pos) if mate else None
 
     if mate is not None:
-        if d is not None and d <= TILE_SIZE * 1.5:
+        if d is not None and d <= ESCORT_DIST:
             return (0, 0), "escort"
         return toward(mate[0], mate[1]), "follow"
 
-    # If we saw an enemy recently (last 10 seconds), head towards their last
-    # known position. Not in solo showdown: the mode caps chasing visible
-    # enemies, so marching after vanished ones across the map would undo it -
-    # there we hide (bush branch below) and let the gas force the fights.
+    last_seen_mate_pos = persistent_data.get("last_seen_mate_pos")
+    last_seen_mate_t = persistent_data.get("last_seen_mate_t", 0.0)
+    mate_known = last_seen_mate_pos and time.time() - last_seen_mate_t < 10.0
+    isolated = mate_known and get_distance(player_pos, last_seen_mate_pos) > ISOLATED_DIST
+
+    # Chasing a vanished enemy used to outrank rejoining the team, for a full
+    # 10 seconds - which is precisely how the bot ended up fighting alone while
+    # its mates went the other way. Hunting is still fine when the team is
+    # close by, but once we're out of support range, regrouping comes first.
     last_enemy = persistent_data.get("last_vanished_enemy")
-    if last_enemy and time.time() - last_enemy["t"] < 10.0 and game_mode != "solo_showdown":
+    if (last_enemy and time.time() - last_enemy["t"] < 10.0
+            and game_mode != "solo_showdown" and not isolated):
         enemy_pos = last_enemy["pos"]
         if get_distance(player_pos, enemy_pos) > TILE_SIZE * 1.5:
             return toward(enemy_pos[0], enemy_pos[1]), "hunt"
 
-    # If we saw a teammate recently (last 10 seconds), head towards their last known position
-    last_seen_mate_pos = persistent_data.get("last_seen_mate_pos")
-    last_seen_mate_t = persistent_data.get("last_seen_mate_t", 0.0)
-    if last_seen_mate_pos and time.time() - last_seen_mate_t < 10.0:
-        if get_distance(player_pos, last_seen_mate_pos) > TILE_SIZE * 1.5:
-            return toward(last_seen_mate_pos[0], last_seen_mate_pos[1]), "regroup"
+    if mate_known and get_distance(player_pos, last_seen_mate_pos) > ESCORT_DIST:
+        return toward(last_seen_mate_pos[0], last_seen_mate_pos[1]), "regroup"
 
     # no teammate/enemy seen recently: survivor (or solo showdown) hides,
     # otherwise explore. use_bush_eff is the profile flag plus the game-mode
@@ -764,6 +789,25 @@ else:
         persistent_data["zone_mode"] = "approach"
     else:
         persistent_data["zone_mode"] = None
+
+    # Over-extension guard. The combat tree decides purely on the enemy, so in
+    # a team mode the bot will happily walk a long way forward to chase its
+    # ideal range while the team stays put - arriving alone, which is how most
+    # of these fights are lost. If we're already well ahead of the nearest
+    # teammate (measured as who is closer to the enemy) and pushing further in,
+    # hold position instead and let them catch up. Firing is decided separately
+    # so we keep poking; melee/committed pushes and solo modes are exempt,
+    # since holding back is the wrong instinct for both.
+    if (_zone.startswith("approach") and teammate_data and not is_melee
+            and not stealth_aggro and game_mode not in ("solo_showdown", "unknown")):
+        _mate_pos, _mate_d = find_closest_teammate(teammate_data, player_pos, walls)
+        if _mate_pos is not None:
+            _mate_to_enemy = get_distance(_mate_pos, enemy_coords)
+            # we're the spearhead if the enemy is meaningfully closer to us
+            if (predicted_dist < _mate_to_enemy - TILE_SIZE * 3.0
+                    and _mate_d is not None and _mate_d > TILE_SIZE * 4.0):
+                movement, _zone = (0, 0), "hold-for-team"
+                persistent_data["zone_mode"] = None
 
     # 1vN peel (idea from universal_smart): pushing deeper into 2+ nearby
     # enemies with no teammate close enough to back us up is a lost trade.
