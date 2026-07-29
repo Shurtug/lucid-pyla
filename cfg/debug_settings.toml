@@ -5,3 +5,6 @@ debug_view = false
 debug_view_fps = 15
 advanced_debug_visuals = false
 record_debug_preview_clips = false
+match_frame_sampling = true
+match_frame_interval = 15
+match_frame_max = 200

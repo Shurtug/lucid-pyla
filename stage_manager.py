@@ -5,6 +5,7 @@ import cv2
 from state_finder import get_state
 from trophy_observer import TrophyObserver, MatchResult
 from utils import find_template_center, load_toml_as_dict, notify_user, save_brawler_data, config_bool, load_general_config
+import map_awareness
 from bs_official_api import get_player_info as bs_get_player_info, get_brawler_trophies, get_brawler_power
 
 try:
@@ -76,6 +77,8 @@ class StageManager:
         self.player_tag = general_cfg.get('player_tag', '')
         self.brawlstars_api_key = general_cfg.get('brawlstars_api_key', '')
         self.use_royaleapi_proxy = config_bool(general_cfg.get('use_royaleapi_proxy'), False)
+        self.current_mode = None      # read off the lobby banner each match
+        self.current_map = None
         self.ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
         self.playstyle_info = playstyle_info
         self.get_latest_state = state_getting
@@ -108,6 +111,34 @@ class StageManager:
 
         trophy_value = int(numbers)
         return trophy_value
+
+    def read_upcoming_match(self):
+        """Read the mode and map off the lobby banner before starting a match.
+
+        Re-read every game on purpose: the map rotation changes, so anything
+        cached from an earlier match is worthless. The mode is worth having on
+        its own - it's ground truth, where the playstyle currently infers the
+        mode from whether it has seen poison gas or teammates.
+
+        Reports only; nothing acts on the result yet.
+        """
+        if not map_awareness.available():
+            return
+        try:
+            frame = self.window_controller.screenshot()
+            mode, map_name = map_awareness.read_lobby_banner(frame)
+            resolved = map_awareness.resolve(map_name, mode) if map_name else None
+        except Exception as exc:
+            print(f"Could not read the lobby banner: {exc}")
+            return
+
+        self.current_mode = mode
+        self.current_map = resolved
+        if resolved:
+            print(f"Next match: {mode or '?'} on {map_name!r} "
+                  f"-> {resolved['map']} ({resolved['width']}x{resolved['height']} tiles)")
+        elif mode or map_name:
+            print(f"Next match: mode={mode!r} map={map_name!r} (no layout for that map)")
 
     def start_game(self):
         if self._should_stop() or self._should_pause():
@@ -147,6 +178,7 @@ class StageManager:
                     if self.Trophy_observer.current_trophies is not None and trophies != self.Trophy_observer.current_trophies:
                         print(f"Warning: {current_brawler}'s trophies from API ({trophies}) do not match current tracked value ({self.Trophy_observer.current_trophies}). This may indicate a desync. Correcting to the API value.")
                     self.Trophy_observer.current_trophies = trophies
+        self.read_upcoming_match()
         print("state is lobby, starting game")
         values = {
             "trophies": self.Trophy_observer.current_trophies,

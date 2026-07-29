@@ -218,6 +218,14 @@ class Play:
         self._gadget_id_brawler = None
         self._gadget_id_attempts = 0
         self._gadget_id_last_try = 0.0
+        # Occasional full-frame captures for offline localisation work. Off by
+        # default; bounded by interval and a hard cap.
+        _dbg = load_toml_as_dict("cfg/debug_settings.toml")
+        self.match_sampling = config_bool(_dbg.get("match_frame_sampling"), False)
+        self.match_sample_interval = float(_dbg.get("match_frame_interval", 15))
+        self.match_sample_max = int(_dbg.get("match_frame_max", 200))
+        self._last_sample_t = 0.0
+        self._samples_taken = 0
 
     @staticmethod
     def get_entity_pos(entity):
@@ -1000,6 +1008,39 @@ class Play:
         movement = self.unstuck_movement_if_needed(movement, current_time)
         return movement
 
+    def sample_match_frame(self, frame):
+        """Occasionally save a full match frame for offline analysis.
+
+        Localising the player inside the map grid needs real in-match frames to
+        develop and check against - camera pan, the perspective tilt, and walls
+        being destroyed mid-match all have to be handled, and none of that can
+        be worked out from lobby screenshots. Sampling a frame every so often
+        builds that set during normal play.
+
+        Off by default; enable match_frame_sampling in cfg/debug_settings.toml.
+        Bounded by an interval and a hard file cap so a long session can't fill
+        the disk, and it writes on the main thread only between ticks.
+        """
+        if not self.match_sampling or self._samples_taken >= self.match_sample_max:
+            return
+        now = time.time()
+        if now - self._last_sample_t < self.match_sample_interval:
+            return
+        self._last_sample_t = now
+        try:
+            folder = resolve_project_path("debug_frames", "match_samples")
+            folder.mkdir(parents=True, exist_ok=True)
+            name = "%s_%s_%03d.png" % (time.strftime("%Y%m%d-%H%M%S"),
+                                       (self.current_brawler or "unknown"),
+                                       self._samples_taken)
+            cv2.imwrite(str(folder / name), cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            self._samples_taken += 1
+            if self._samples_taken == self.match_sample_max:
+                print(f"Match frame sampling reached its cap of {self.match_sample_max}; stopping.")
+        except Exception as exc:
+            print(f"Could not save a match frame: {exc}")
+            self.match_sampling = False       # don't retry a broken path every tick
+
     def identify_equipped_gadget(self, frame):
         """Resolve which gadget is equipped from the gadget button.
 
@@ -1466,6 +1507,7 @@ class Play:
             else:
                 self.update_player_hp(frame, data.get("player"))
                 self.identify_equipped_gadget(frame)
+                self.sample_match_frame(frame)
 
         if not data:
             if current_time - self.time_since_player_last_found > 1.0:

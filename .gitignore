@@ -14,6 +14,9 @@ internals/
 .swarm/
 .claude/
 
+# Secrets - API keys, player tags (see utils.load_general_config)
+cfg/secrets.toml
+
 # Runtime output / debug artifacts
 debug_frames/
 *.log
@@ -24,8 +27,18 @@ Screenshot_*.png
 *_ammo_mask.png
 *_ammo_roi.png
 test_*.png
+debug_*.png
+live_screen*.png
+
+# Extracted game-data dumps (unreferenced by source, not needed to run the bot)
+assets/
 
 # Local scratch / backups
 play - Kopie.py
 scratch_color.py
 *.bak
+
+# PyInstaller build output
+.pyinstaller_build/
+cfg/map_data.json
+debug_frames/
