@@ -399,6 +399,15 @@ def gas_flee(g):
     if dx == 0 and dy == 0:
         return None
     length = math.hypot(dx, dy)
+    # Route out with the pathfinder rather than shoving the raw vector at the
+    # engine: first_open only ever tries the vector and its two axis halves, so
+    # a wall between us and clean ground pinned the bot against the cloud.
+    # Aiming at a point a few tiles upwind lets find_path go around it.
+    target = (player_pos[0] + dx / length * TILE_SIZE * 4.0,
+              player_pos[1] + dy / length * TILE_SIZE * 4.0)
+    routed = toward(target[0], target[1])
+    if routed != (0, 0):
+        return routed
     vec = (dx / length * JOYSTICK_RADIUS, dy / length * JOYSTICK_RADIUS)
     return first_open([vec, (vec[0], 0), (0, vec[1])], vec)
 
