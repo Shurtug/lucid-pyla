@@ -366,15 +366,41 @@ def wander():
             
     return current_vec, f"explore_{explore_dir}"
 
+GAS_IMBALANCE = 0.15   # an axis must be this lopsided before we commit to it
+
+
 def gas_flee(g):
-    x, y = 0, 0
-    if g["up"] or g["down"]:
-        y = JOYSTICK_RADIUS if g["up"] > g["down"] else -JOYSTICK_RADIUS
-    if g["left"] or g["right"]:
-        x = JOYSTICK_RADIUS if g["left"] > g["right"] else -JOYSTICK_RADIUS
-    if x == 0 and y == 0:
+    """Move away from where the gas actually is.
+
+    The four counts overlap: up/down are measured across the full width of the
+    sampled area and left/right across its full height, so gas sitting directly
+    above the player lands in ALL FOUR. The old code voted on each axis
+    independently and at full strength, so with gas above (left and right
+    nearly equal, both over the threshold) the near-tie broke arbitrarily to
+    "left" and pushed the bot a full 75 sideways - along the gas edge, or
+    straight into more of it - instead of simply walking out.
+
+    Treating the counts as a gradient fixes that: the imbalance on each axis
+    gives a direction, ties cancel to zero instead of picking a side, and an
+    axis only counts once it is clearly lopsided.
+    """
+    up, down = g["up"], g["down"]
+    left, right = g["left"], g["right"]
+    dx = left - right          # more gas to the left -> positive -> head right
+    dy = up - down             # more gas above      -> positive -> head down
+    h_total = left + right
+    v_total = up + down
+    # ignore an axis whose two sides are near-equal: that's gas spanning the
+    # sample rather than gas on one side of us
+    if h_total <= 0 or abs(dx) < h_total * GAS_IMBALANCE:
+        dx = 0
+    if v_total <= 0 or abs(dy) < v_total * GAS_IMBALANCE:
+        dy = 0
+    if dx == 0 and dy == 0:
         return None
-    return first_open([(x, y), (x, 0), (0, y)], (x, y))
+    length = math.hypot(dx, dy)
+    vec = (dx / length * JOYSTICK_RADIUS, dy / length * JOYSTICK_RADIUS)
+    return first_open([vec, (vec[0], 0), (0, vec[1])], vec)
 
 
 def count_threats_within(radius):

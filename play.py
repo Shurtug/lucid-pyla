@@ -759,6 +759,22 @@ class Play:
         hsv_roi = cv2.cvtColor(roi, cv2.COLOR_RGB2HSV)
 
         mask = cv2.inRange(hsv_roi, POISON_LOW_HSV, POISON_HIGH_HSV)
+
+        # The poison colour band also matches ordinary bright-green grass and
+        # bushes - sampled off a live frame, bush pixels come out at HSV
+        # (55, 108, 229), sitting squarely inside it. Left alone, the bot reads
+        # a hedge as a wall of gas and flees it, which on a map with gas on the
+        # other side means fleeing straight INTO the real thing. The tile model
+        # already tells us where the bushes are, so punch them out of the mask
+        # before counting; anything still lit is genuinely gas.
+        for bx1, by1, bx2, by2 in (self.last_bushes_data or []):
+            rx1 = int(clamp(bx1 - min_x, 0, mask.shape[1]))
+            ry1 = int(clamp(by1 - min_y, 0, mask.shape[0]))
+            rx2 = int(clamp(bx2 - min_x, 0, mask.shape[1]))
+            ry2 = int(clamp(by2 - min_y, 0, mask.shape[0]))
+            if rx2 > rx1 and ry2 > ry1:
+                mask[ry1:ry2, rx1:rx2] = 0
+
         x, y = self.get_entity_pos(actual_player_box)
         roi_w = int(max_x - min_x)
         roi_h = int(max_y - min_y)
