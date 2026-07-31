@@ -15,6 +15,7 @@ except ImportError:
     def add_advanced_visuals(a, b):
         return None
 import gadget_detect
+import localization
 from state_finder import get_state
 from utils import load_toml_as_dict, count_hsv_pixels, load_brawlers_info, interpret_pyla_code, \
     count_mask_pixels, JOYSTICK_RADIUS, clamp, config_bool, load_pyla_script, resolve_project_path
@@ -236,6 +237,11 @@ class Play:
         # set by main.py from the lobby read, so samples can be labelled with
         # the map they actually came from
         self.current_map = None
+        # Grid position tracking. current_map_resolved is handed over by the
+        # lobby read; the localiser needs the grid itself, not just the name.
+        self.current_map_resolved = None
+        self.localizer = localization.Localizer()
+        self._last_pos_log = 0.0
 
     @staticmethod
     def get_entity_pos(entity):
@@ -1045,6 +1051,38 @@ class Play:
         movement = self.unstuck_movement_if_needed(movement, current_time)
         return movement
 
+    def track_grid_position(self, frame, data):
+        """Work out which grid cell we're standing in, and log it.
+
+        Reports only - nothing steers on this yet. It needs watching across
+        modes first: it held up well on Brawl Ball (right map 34/39 frames
+        blind, ~3 tile steps per 4s) but was unreliable on Showdown, where a
+        60x60 open arena of repetitive terrain matches almost anywhere.
+        """
+        if not self.current_map_resolved:
+            return
+        players = (data or {}).get("player") or []
+        walls = (data or {}).get("wall") or []
+        if not players or not walls:
+            return
+        try:
+            cell = self.localizer.update(
+                self.current_map_resolved, self.get_entity_pos(players[0]),
+                walls, frame.shape, time.time())
+        except Exception as exc:
+            print(f"Grid localisation failed: {exc}")
+            self.current_map_resolved = None      # don't retry a broken setup
+            return
+        now = time.time()
+        if cell and now - self._last_pos_log >= 2.0:
+            self._last_pos_log = now
+            grid = self.current_map_resolved["grid"]
+            row = grid[cell[1]] if cell[1] < len(grid) else ""
+            here = row[cell[0]] if cell[0] < len(row) else "?"
+            print(f"[pos] {self.current_map_resolved['map']} cell={cell} "
+                  f"tile={here!r} match={self.localizer.score:.2f} "
+                  f"{'reliable' if self.localizer.reliable else 'UNRELIABLE'}")
+
     def sample_match_frame(self, frame):
         """Occasionally save a full match frame for offline analysis.
 
@@ -1549,6 +1587,7 @@ class Play:
                 self.update_player_hp(frame, data.get("player"))
                 self.identify_equipped_gadget(frame)
                 self.sample_match_frame(frame)
+                self.track_grid_position(frame, data)
 
         if not data:
             if current_time - self.time_since_player_last_found > 1.0:

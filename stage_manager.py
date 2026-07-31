@@ -139,6 +139,10 @@ class StageManager:
         # unlabelled frames can't validate WHERE the localiser thinks we are
         if self.play_ref is not None:
             self.play_ref.current_map = resolved["map"] if resolved else None
+            # the localiser needs the grid itself, and a new match means the
+            # tracked position from the last one is meaningless
+            self.play_ref.current_map_resolved = resolved
+            self.play_ref.localizer.reset()
         if resolved:
             print(f"Next match: {mode or '?'} on {map_name!r} "
                   f"-> {resolved['map']} ({resolved['width']}x{resolved['height']} tiles)")
