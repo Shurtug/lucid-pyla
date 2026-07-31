@@ -82,7 +82,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.Time_management = TimeManagement()
             self.lobby_automator = LobbyAutomation(self.window_controller)
             self.runtime_control = runtime_control
-            self.Stage_manager = StageManager(data, self.lobby_automator, self.window_controller, self.playstyle_info, self.get_latest_state, runtime_control=runtime_control)
+            self.Stage_manager = StageManager(data, self.lobby_automator, self.window_controller, self.playstyle_info, self.get_latest_state, runtime_control=runtime_control, play_ref=self.Play)
             self.states_requiring_data = ["lobby"]
             self.no_detections_action_threshold = 60 * 8
             self.state = None

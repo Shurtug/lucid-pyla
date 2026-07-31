@@ -36,7 +36,7 @@ def load_image(image_path, scale_factor):
 
 
 class StageManager:
-    def __init__(self, brawlers_data, lobby_automator, window_controller, playstyle_info, state_getting, runtime_control=None):
+    def __init__(self, brawlers_data, lobby_automator, window_controller, playstyle_info, state_getting, runtime_control=None, play_ref=None):
         self.Lobby_automation = lobby_automator
         self.lobby_config = load_toml_as_dict("./cfg/lobby_config.toml")
         self.close_popup_icon = None
@@ -79,6 +79,7 @@ class StageManager:
         self.use_royaleapi_proxy = config_bool(general_cfg.get('use_royaleapi_proxy'), False)
         self.current_mode = None      # read off the lobby banner each match
         self.current_map = None
+        self.play_ref = play_ref      # so sampled frames can be labelled
         self.ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
         self.playstyle_info = playstyle_info
         self.get_latest_state = state_getting
@@ -134,6 +135,10 @@ class StageManager:
 
         self.current_mode = mode
         self.current_map = resolved
+        # hand the map name to Play so sampled frames are labelled with it -
+        # unlabelled frames can't validate WHERE the localiser thinks we are
+        if self.play_ref is not None:
+            self.play_ref.current_map = resolved["map"] if resolved else None
         if resolved:
             print(f"Next match: {mode or '?'} on {map_name!r} "
                   f"-> {resolved['map']} ({resolved['width']}x{resolved['height']} tiles)")

@@ -226,6 +226,9 @@ class Play:
         self.match_sample_max = int(_dbg.get("match_frame_max", 200))
         self._last_sample_t = 0.0
         self._samples_taken = 0
+        # set by main.py from the lobby read, so samples can be labelled with
+        # the map they actually came from
+        self.current_map = None
 
     @staticmethod
     def get_entity_pos(entity):
@@ -1030,9 +1033,13 @@ class Play:
         try:
             folder = resolve_project_path("debug_frames", "match_samples")
             folder.mkdir(parents=True, exist_ok=True)
-            name = "%s_%s_%03d.png" % (time.strftime("%Y%m%d-%H%M%S"),
-                                       (self.current_brawler or "unknown"),
-                                       self._samples_taken)
+            # Label the frame with the map read off the lobby. Without it the
+            # samples can't be used to check WHERE the localiser thinks we are -
+            # only which map it picks - because there's nothing to check against.
+            name = "%s_%s_%s_%03d.png" % (time.strftime("%Y%m%d-%H%M%S"),
+                                          (self.current_map or "nomap"),
+                                          (self.current_brawler or "unknown"),
+                                          self._samples_taken)
             cv2.imwrite(str(folder / name), cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
             self._samples_taken += 1
             if self._samples_taken == self.match_sample_max:
