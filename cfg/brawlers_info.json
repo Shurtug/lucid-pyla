@@ -19,7 +19,7 @@
   },
   "colt": {
     "safe_range": 324.0,
-    "attack_range": 546.0,
+    "attack_range": 576,
     "super_type": "damage",
     "super_range": 704,
     "ignore_walls_for_attacks": false,
@@ -343,7 +343,7 @@
   },
   "penny": {
     "safe_range": 315.0,
-    "attack_range": 512.0,
+    "attack_range": 555,
     "super_type": "spawnable",
     "super_range": 320,
     "ignore_walls_for_attacks": false,
@@ -1243,7 +1243,7 @@
   },
   "charlie": {
     "safe_range": 328.0,
-    "attack_range": 533.0,
+    "attack_range": 576,
     "super_type": "other_target",
     "super_range": 576,
     "ignore_walls_for_attacks": false,
@@ -1603,7 +1603,7 @@
   },
   "lumi": {
     "safe_range": 341,
-    "attack_range": 554,
+    "attack_range": 512,
     "super_type": "damage",
     "super_range": 469,
     "ignore_walls_for_attacks": false,
@@ -1747,7 +1747,7 @@
   },
   "pierce": {
     "safe_range": 305,
-    "attack_range": 614,
+    "attack_range": 640,
     "super_type": "damage",
     "super_range": 315,
     "ignore_walls_for_attacks": false,
@@ -1765,7 +1765,7 @@
   },
   "glowy": {
     "safe_range": 315,
-    "attack_range": 512,
+    "attack_range": 469,
     "super_type": "damage",
     "super_range": 362,
     "ignore_walls_for_attacks": false,
