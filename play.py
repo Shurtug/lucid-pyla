@@ -24,8 +24,15 @@ brawl_stars_width, brawl_stars_height = 1920, 1080
 super_crop_area = load_toml_as_dict("./cfg/lobby_config.toml")['pixel_counter_crop_area']['super']
 gadget_crop_area = load_toml_as_dict("./cfg/lobby_config.toml")['pixel_counter_crop_area']['gadget']
 hypercharge_crop_area = load_toml_as_dict("./cfg/lobby_config.toml")['pixel_counter_crop_area']['hypercharge']
-POISON_LOW_HSV = np.array((30, 90, 221), dtype=np.uint8)
-POISON_HIGH_HSV = np.array((57, 114, 235), dtype=np.uint8)
+# Poison gas colour. The old band demanded V >= 221, and gas renders at V 215
+# in some map themes and V 229 in others - so on any map of the first kind the
+# gas was almost entirely invisible to the bot (measured: 725 matching pixels
+# on a frame where gas covered most of the screen, well under the detection
+# threshold, i.e. reported as no gas at all while standing in it).
+# Widened to cover both, and the hue narrowed at the same time so it keys on
+# the gas green specifically - teal bushes sit around hue 171 and are excluded.
+POISON_LOW_HSV = np.array((45, 95, 185), dtype=np.uint8)
+POISON_HIGH_HSV = np.array((65, 120, 245), dtype=np.uint8)
 PLAYER_HIT_CIRCLE_RADIUS = 53
 
 class GridPathfinder:

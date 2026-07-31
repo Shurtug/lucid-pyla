@@ -190,14 +190,24 @@ def toward(px, py):
     step is axis-snapped to the neighbouring cell, so a diagonal target came out
     as "straight right" until the next tick.
     """
-    path = find_path(player_pos, (px, py), walls)
-    vx, vy = path[-1] if path else (px - player_pos[0], py - player_pos[1])
-    if vx == 0 and vy == 0:
-        vx, vy = px - player_pos[0], py - player_pos[1]
-    length = math.hypot(vx, vy)
+    path = find_path(player_pos, (px, py), walls) or []
+    # Walk the look-ahead steps from furthest back to nearest and take the
+    # first one that isn't blocked. The furthest gives the straightest heading,
+    # but the path CURVES around obstacles - a straight line to the third cell
+    # can cut the corner the path was avoiding, which showed up as the movement
+    # being wall-blocked and replaced by a fallback direction ("follow+wall").
+    for vx, vy in list(reversed(path)) + [(px - player_pos[0], py - player_pos[1])]:
+        length = math.hypot(vx, vy)
+        if length < 1e-6:
+            continue
+        step = (vx / length * JOYSTICK_RADIUS, vy / length * JOYSTICK_RADIUS)
+        if not blocked(step):
+            return step
+    dx, dy = px - player_pos[0], py - player_pos[1]
+    length = math.hypot(dx, dy)
     if length < 1e-6:
         return (0, 0)
-    return (vx / length * JOYSTICK_RADIUS, vy / length * JOYSTICK_RADIUS)
+    return (dx / length * JOYSTICK_RADIUS, dy / length * JOYSTICK_RADIUS)
 
 def away(px, py):
     dx = player_pos[0] - px
@@ -284,7 +294,12 @@ def wander():
     # behind a wall or in a bush drops out for a while), so a remembered mate
     # stays followable for MATE_MEMORY - 1.5s was short enough that a normal
     # occlusion made the bot forget its team and wander off alone.
-    MATE_MEMORY = 3.5
+    # Short on purpose. A remembered teammate is a FIXED position that goes
+    # stale the moment they move, so following it for long walks the bot to
+    # where they used to be. 3.5s was tried and made that worse; the longer
+    # 10s memory below is for deciding whether to regroup at all, which
+    # tolerates a stale position far better than steering by it does.
+    MATE_MEMORY = 1.2
     ESCORT_DIST = TILE_SIZE * 1.5     # close enough; hold position
     ISOLATED_DIST = TILE_SIZE * 7.0   # beyond this we're out of support range
 
@@ -635,7 +650,12 @@ if enemy_coords is None:
         movement, _zone = wander()
     
     last_enemy = persistent_data.get("last_vanished_enemy")
-    prefire_limit = 0.5 if is_melee else 2.5
+    # Keep firing at where an enemy just was, for a moment - they've usually
+    # only stepped behind cover. 2.5s was far too generous: long after they'd
+    # actually gone the bot was still shooting at empty ground, which looks
+    # (and is) like firing at nothing, wastes the magazine and gives away
+    # position. Enough to cover a duck behind a wall, not a departure.
+    prefire_limit = 0.5 if is_melee else 1.0
     if last_enemy and time.time() - last_enemy["t"] < prefire_limit:
         blind_pos = last_enemy["pos"]
         blind_dist = get_distance(player_pos, blind_pos)
