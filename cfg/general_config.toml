@@ -1,4 +1,11 @@
-cpu_or_gpu = "cpu"
+# Retried 2026-07-31 after an AMD driver update (32.0.31035.1003, dated
+# 24.07.2026 - the crashes were on the driver before it). A 60s DirectML
+# stress run with BlueStacks up did 27,220 inferences at 2.2ms mean with no
+# crash, where the old driver died within ~20s. Note that run did NOT include
+# scrcpy streaming, so this is a trial under the real thing.
+# If the bot dies with no Python traceback (exit 139 / silent exit) within the
+# first minute, the driver problem is back: set this to "cpu" and it's fixed.
+cpu_or_gpu = "gpu"
 gpu_device_id = 0
 max_ips = "auto"
 pipeline_inference = true
