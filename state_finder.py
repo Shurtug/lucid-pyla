@@ -1,6 +1,7 @@
 import os
 import sys
 import cv2
+import numpy as np
 import time
 sys.path.append(os.path.abspath('/'))
 from utils import load_toml_as_dict, config_bool
@@ -122,9 +123,42 @@ def get_in_game_state(image):
         if is_in_trophy_reward(image):
             return "trophy_reward"
 
-        return "match"
+        # Positive evidence, not a fallback: only call it a match if the
+        # in-match UI is actually there.
+        return "match" if is_match_ui_present(image) else "loading"
     finally:
         should_print_debug_info = False
+
+
+
+def is_match_ui_present(image) -> bool:
+    """Are the in-match action buttons actually on screen?
+
+    get_state() used to return "match" for anything it couldn't otherwise
+    identify, so loading screens, the post-match PLAY AGAIN screen and any
+    unrecognised frame were all played as if they were gameplay - the bot would
+    detect "enemies" in splash artwork and decide a move. Replaying captured
+    frames showed every single one classified as "match".
+
+    The super button only exists during a match, so its presence is positive
+    evidence. Keyed on the button body's dark blue rather than a template of
+    its icon, because the icon differs per brawler. Measured over 120 captured
+    frames: menus scored 0.001-0.007, gameplay a median of 0.450 - the two
+    don't overlap anywhere near the threshold.
+
+    Frames where the buttons are absent mid-match (a moment with no UI drawn)
+    also come back False, which is right: with no button on screen a tap does
+    nothing, so there's nothing useful to decide.
+    """
+    x1, y1, x2, y2 = load_toml_as_dict("cfg/lobby_config.toml")["pixel_counter_crop_area"]["super"]
+    h, w = image.shape[:2]
+    sx, sy = w / 1920.0, h / 1080.0
+    crop = image[int(y1 * sy):int(y2 * sy), int(x1 * sx):int(x2 * sx)]
+    if crop.size == 0:
+        return True                     # can't tell - assume playable
+    hsv = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)
+    mask = cv2.inRange(hsv, np.array((95, 60, 25), np.uint8), np.array((130, 255, 150), np.uint8))
+    return (cv2.countNonZero(mask) / mask.size) > 0.10
 
 
 def is_in_shop(image) -> bool:

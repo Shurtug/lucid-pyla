@@ -51,6 +51,9 @@ class StageManager:
             'popup': self.close_pop_up,
             'match': lambda: 0,
             'match_making': lambda: 0,
+            # loading screens and any frame without the in-match UI: nothing to
+            # do but wait, and definitely nothing to fight
+            'loading': lambda: 0,
             'lobby': self.start_game,
             'star_drop_regular': lambda: self.click_star_drop("regular"),
             'star_drop_angelic': lambda: self.click_star_drop("angelic"),
