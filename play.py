@@ -361,6 +361,33 @@ class Play:
             self.fix_movement_keys["rotation_angle_step"] = 1
             self.time_since_different_movement = current_time
 
+        # Being stuck means NOT MOVING, not holding a heading. This used to
+        # trigger purely on the direction key staying the same for a couple of
+        # seconds, so walking steadily toward a teammate - the most normal
+        # thing the bot does - looked exactly like grinding against a wall, and
+        # it would rotate the movement by up to 180 degrees and send the bot
+        # away from where it was going. (The playstyle log prints its intended
+        # direction, which is why it could read "right" while the bot ran left.)
+        # The player's own position settles it: if we're covering ground, we're
+        # not stuck, whatever heading we've been holding.
+        pos = self._player_screen_center
+        if pos is not None:
+            ref, ref_t = getattr(self, "_unstuck_ref", (None, current_time))
+            if ref is None:
+                # nothing to compare against yet - don't let a stale timer fire
+                # a rotation on the first tick we can see the player
+                self._unstuck_ref = (pos, current_time)
+                self.time_since_different_movement = current_time
+            else:
+                # Measured over a window, not per tick: at ~25 ticks/sec a
+                # brawler only covers a few pixels between frames, which is the
+                # same order as detection jitter. Half a second of travel is
+                # unambiguous.
+                if current_time - ref_t >= 0.5:
+                    if math.hypot(pos[0] - ref[0], pos[1] - ref[1]) > self.TILE_SIZE * 0.5:
+                        self.time_since_different_movement = current_time
+                    self._unstuck_ref = (pos, current_time)
+
         if current_time - self.time_since_different_movement > self.fix_movement_keys["delay_to_trigger"]:
             self.fix_movement_keys["rotation_sign"] *= -1
             angle_step = self.fix_movement_keys["rotation_angle_step"]
