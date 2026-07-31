@@ -225,8 +225,12 @@ def away_from_enemies(enemies_data, radius, fallback_x, fallback_y):
     if dx == 0 and dy == 0:
         return away(fallback_x, fallback_y)
     mag = (dx**2 + dy**2)**0.5
-    dx = (dx / mag) * 100
-    dy = (dy / mag) * 100
+    # full deflection: the engine clamps each axis to the joystick radius, so a
+    # bare 100 saturated on straight moves but under-deflected on diagonals
+    # (100 on the diagonal is only 71 per axis) - retreats came out slower
+    # exactly when fleeing diagonally
+    dx = (dx / mag) * JOYSTICK_RADIUS
+    dy = (dy / mag) * JOYSTICK_RADIUS
     return first_open([(dx, dy), (dx, 0), (0, dy)], (dx, dy))
 
 def get_cover_vector(enemies_data, is_thrower, is_defensive, attack_range):
@@ -240,10 +244,16 @@ def get_cover_vector(enemies_data, is_thrower, is_defensive, attack_range):
     else:
         closest_pos, cur_closest = None, float('inf')
 
+    # How far ahead to test a candidate cover spot. Written in tiles, not raw
+    # pixels: TILE_SIZE already tracks the capture resolution, so a fixed 150px
+    # meant ~2.8 tiles on a 1920 capture but ~4.2 on a 1280 one - the bot
+    # effectively looked for cover at a different distance depending on the
+    # window size.
+    probe = TILE_SIZE * 2.8
     for dx, dy in [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]:
-        px = player_pos[0] + dx * 150
-        py = player_pos[1] + dy * 150
-        if is_path_blocked(player_data, (dx*150, dy*150), walls):
+        px = player_pos[0] + dx * probe
+        py = player_pos[1] + dy * probe
+        if is_path_blocked(player_data, (dx * probe, dy * probe), walls):
             continue
 
         in_bush = any(b[0] <= px <= b[2] and b[1] <= py <= b[3] for b in bushes)
@@ -286,7 +296,7 @@ def get_cover_vector(enemies_data, is_thrower, is_defensive, attack_range):
 
         if score > best_score:
             best_score = score
-            best_dir = (dx * 100, dy * 100)
+            best_dir = (dx * JOYSTICK_RADIUS, dy * JOYSTICK_RADIUS)
     return first_open([(best_dir[0], best_dir[1]), (best_dir[0], 0), (0, best_dir[1])], best_dir) if best_dir else None
 
 def wander():
@@ -801,7 +811,7 @@ else:
         # which is exactly what an escape gadget is for.
         _escape_gadget = (_trigger == "ESCAPE" and is_gadget_ready
                           and time.time() - persistent_data["last_gadget"] > 3.0)
-        if _escape_gadget or (gmode == "defensive" and is_gadget_ready and time.time() - persistent_data["last_gadget"] > 3.0 and predicted_dist < max(350, panic * 0.5)):
+        if _escape_gadget or (gmode == "defensive" and is_gadget_ready and time.time() - persistent_data["last_gadget"] > 3.0 and predicted_dist < max(TILE_SIZE * 6.5, panic * 0.5)):
             movement = away_from_enemies(enemy_data, panic * 1.5, ex, ey)
             _zone = f"kite-gadget{reason}"
             use_gadget()
@@ -1079,7 +1089,23 @@ if mates_hiding and not gas:
 if movement is None:
     movement = (0, 0)
 if is_path_blocked(player_data, movement, walls):
-    movement = first_open([(0, -JOYSTICK_RADIUS), (JOYSTICK_RADIUS, 0), (-JOYSTICK_RADIUS, 0), (0, JOYSTICK_RADIUS)], movement)
+    # Slide along the obstacle instead of abandoning the plan. This used to try
+    # a fixed list starting with straight up, so ANY blocked move became "walk
+    # north" no matter where we were headed - with a teammate to the west the
+    # bot would march away from them every time its path clipped a wall, which
+    # reads exactly like refusing to follow. Try the nearest headings to the
+    # one we wanted first, so a blocked move degrades into going around rather
+    # than going somewhere unrelated.
+    _mx, _my = movement
+    if _mx or _my:
+        _base = math.atan2(_my, _mx)
+        _alts = []
+        for _deg in (45, -45, 90, -90, 135, -135, 180):
+            _a = _base + math.radians(_deg)
+            _alts.append((math.cos(_a) * JOYSTICK_RADIUS, math.sin(_a) * JOYSTICK_RADIUS))
+    else:
+        _alts = [(0, -JOYSTICK_RADIUS), (JOYSTICK_RADIUS, 0), (-JOYSTICK_RADIUS, 0), (0, JOYSTICK_RADIUS)]
+    movement = first_open(_alts, movement)
     _zone += "+wall"
 
 # Only build the (fairly expensive) log string when it will actually be printed.
